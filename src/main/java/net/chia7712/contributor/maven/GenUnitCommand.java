@@ -1,4 +1,4 @@
-package net.chia7712.maven;
+package net.chia7712.contributor.maven;
 
 
 import java.io.BufferedReader;

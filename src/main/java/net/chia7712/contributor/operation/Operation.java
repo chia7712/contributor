@@ -1,5 +1,5 @@
 
-package net.chia7712.operation;
+package net.chia7712.contributor.operation;
 
 public enum Operation {
   PUT, DELETE, INCREMENT, APPEND, GET, BATCH;
