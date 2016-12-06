@@ -5,6 +5,7 @@
   <artifactId>contributor</artifactId>
   <version>1.0</version>
   <packaging>jar</packaging>
+  <name>Contributor</name>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <main.basedir>${basedir}</main.basedir>
