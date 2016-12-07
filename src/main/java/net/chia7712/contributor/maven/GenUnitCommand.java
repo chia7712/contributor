@@ -1,6 +1,5 @@
 package net.chia7712.contributor.maven;
 
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -13,10 +12,9 @@ import java.util.TreeMap;
 
 public class GenUnitCommand {
   private static final List<String> SKIPS = Arrays.asList(
-//     "TestDispatchMergingRegionsProcedure"
   );
   private static final String EXTRA_OPTS = null;
-  private static final String ISSUE = "hbase-17036";
+  private static final String ISSUE = "hbase-17174";
   private static final int LIMIT = -1;
   private static final int PARALLER = 1;
   private static final String PATH = "D:/Dropbox/hbase-jira/" + ISSUE + "/unittest";
@@ -36,8 +34,7 @@ public class GenUnitCommand {
     }
     SKIPS.forEach(v -> packages.put(v, Double.MAX_VALUE));
     packages.forEach((k, v) -> System.out.println(k + "\t" + v));
-    System.out.println("----------------------");
-    packages.forEach((k, v) -> System.out.println(k));
+    System.out.println("Total:" + packages.size());
     System.out.println("----------------------");
     System.out.println(generate(packages));
   }
