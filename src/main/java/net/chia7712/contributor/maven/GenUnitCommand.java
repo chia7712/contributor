@@ -17,7 +17,8 @@ public class GenUnitCommand {
   private static final String ISSUE = "hbase-17174";
   private static final int LIMIT = -1;
   private static final int PARALLER = 1;
-  private static final String PATH = "D:/Dropbox/hbase-jira/" + ISSUE + "/unittest";
+  private static final String HOME = "/Users/chia7712";
+  private static final String PATH = HOME + "/Dropbox/hbase-jira/" + ISSUE + "/unittest";
   private static final boolean ALL_TEST = true;
   public static void main(String[] args) throws IOException {
     Map<String, Double> packages = new TreeMap<>();
