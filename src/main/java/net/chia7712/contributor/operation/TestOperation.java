@@ -3,7 +3,6 @@ package net.chia7712.contributor.operation;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -19,16 +18,16 @@ import org.apache.hadoop.hbase.util.Threads;
 
 public class TestOperation {
   public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
-    if (args.length != 6) {
-      System.out.println("[USAGE] <threads> <table> <cf> <rows> <op> <durability>");
+    if (args.length < 5) {
+      System.out.println("[USAGE] <threads> <table> <cf> <rows> <op> [durability]");
       return;
     }
     final int threads = Integer.valueOf(args[0]);
     final TableName tb = TableName.valueOf(args[1]);
     final byte[] cf = Bytes.toBytes(args[2]);
     final int rows = Integer.valueOf(args[3]);
-    final Operation op = Operation.valueOf(args[4]);
-    final Durability durability = Durability.valueOf(args[5]);
+    final Operation op = Operation.valueOf(args[4].toUpperCase());
+    final Durability durability = args.length >= 6 ? Durability.valueOf(args[5]) : Durability.USE_DEFAULT;
     run(threads, tb, rows, cf, op, durability);
   }
 
