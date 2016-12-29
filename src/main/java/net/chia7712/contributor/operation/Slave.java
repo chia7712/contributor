@@ -22,8 +22,8 @@ public interface Slave {
     "8-",
     "9-");
   int work(final Table table, final int rowIndex,
-    final byte[] cf, Durability durability) throws IOException;
-  default int finish(final Table table) throws IOException {
+    final byte[] cf, Durability durability) throws IOException, InterruptedException;
+  default int finish(final Table table) throws IOException, InterruptedException {
     return 0;
   }
   default byte[] createRow(int currentIndex) {

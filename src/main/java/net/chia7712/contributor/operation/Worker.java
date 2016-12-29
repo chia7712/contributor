@@ -49,6 +49,8 @@ public final class Worker implements Runnable {
       cellCount += slave.finish(table);
     } catch (IOException ex) {
       throw new RuntimeException(ex);
+    } catch (InterruptedException ex) {
+      throw new RuntimeException(ex);
     } finally {
       try {
         table.close();

@@ -31,18 +31,7 @@ public class TestOperation {
     final Durability durability = Durability.valueOf(args[5]);
     run(threads, tb, rows, cf, op, durability);
   }
-  private static List<byte[]> split(int regions) {
-    List<byte[]> result = new LinkedList<>();
-    if (regions <= 1) {
-      return result;
-    }
-    for (int start = 2; result.size() < (regions - 1)
-        && start <=9; ++start) {
-      System.out.println("add key:" + start);
-      result.add(Bytes.toBytes(String.valueOf(start)));
-    }
-    return result;
-  }
+
   private static void run(int threadCount, TableName tableName, int rowCount,
     byte[] cf, Operation op, final Durability durability) throws IOException, InterruptedException, ExecutionException {
     try (Connection con = ConnectionFactory.createConnection()) {
