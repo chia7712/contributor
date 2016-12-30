@@ -1,5 +1,5 @@
 
-package net.chia7712.contributor.jdbc;
+package codes.chia7712.contributor.jdbc;
 
 import java.util.Optional;
 

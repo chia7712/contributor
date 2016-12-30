@@ -1,5 +1,5 @@
 
-package net.chia7712.contributor.maven;
+package codes.chia7712.contributor.maven;
 
 import java.io.BufferedReader;
 import java.io.File;

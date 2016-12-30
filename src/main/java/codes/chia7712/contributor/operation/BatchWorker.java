@@ -1,4 +1,4 @@
-package net.chia7712.contributor.operation;
+package codes.chia7712.contributor.operation;
 
 import java.io.IOException;
 import java.util.LinkedList;
