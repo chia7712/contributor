@@ -17,9 +17,13 @@ class BatchWorker implements Slave {
   private static final int BATCH_VALUE = 10;
   private final List<Row> rows = new LinkedList<>();
   private final Random rm = new Random();
+  private Object[] results = null;
   private int flush(final Table table) throws IOException, InterruptedException {
     if (!rows.isEmpty()) {
-      table.batch(rows);
+      if (results == null || results.length != rows.size()) {
+        results = new Object[rows.size()];
+      }
+      table.batch(rows, results);
       int size = rows.size();
       rows.clear();
       return size;

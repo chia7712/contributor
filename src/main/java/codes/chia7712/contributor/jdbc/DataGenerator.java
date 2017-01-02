@@ -16,7 +16,6 @@ import java.sql.Types;
 import java.sql.Date;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -36,10 +35,6 @@ public final class DataGenerator {
    * Log.
    */
   private static final Log LOG = LogFactory.getLog(DataGenerator.class);
-  /**
-   * The write buffer.
-   */
-  private static final int BUFFER_LIMIT = 30;
 
   /**
    * Write thread. End with commiting all rows.
@@ -63,6 +58,7 @@ public final class DataGenerator {
      */
     private final String upsertSQL;
     private final List<DataWriter> writers;
+    private final int rowBuffer;
 
     /**
      * Constructs a write thread.
@@ -74,13 +70,15 @@ public final class DataGenerator {
      * @throws SQLException If failed to establish db connection
      */
     private WriteThread(final String url, final String upsertSQL,
-            final AtomicLong progress, final long rowCount, final List<DataWriter> writers) throws SQLException {
+            final AtomicLong progress, final long rowCount,
+            final List<DataWriter> writers, int rowBuffer) throws SQLException {
       this.progress = progress;
       this.conn = DriverManager.getConnection(url);
       this.conn.setAutoCommit(false);
       this.upsertSQL = upsertSQL;
       this.rowCount = rowCount;
       this.writers = writers;
+      this.rowBuffer = rowBuffer;
     }
 
     @Override
@@ -104,7 +102,7 @@ public final class DataGenerator {
           }
           stat.addBatch();
           ++bufferCount;
-          if (bufferCount % BUFFER_LIMIT == 0) {
+          if (bufferCount % rowBuffer == 0) {
             stat.executeBatch();
             conn.commit();
             stat.clearBatch();
@@ -132,14 +130,17 @@ public final class DataGenerator {
    * @throws Exception If any error
    */
   public static void main(final String[] args) throws Exception {
-    if (args.length != 3) {
-      System.out.println("[Usage]: <jdbc url> <table name> <row count>");
+    if (args.length != 5) {
+      System.out.println("[Usage]: <jdbc url> <table name> <row count> <thread count> <row buffer>");
       System.exit(0);
     }
     final String url = args[0];
     final TableName tableName = new TableName(args[1]);
     final DBType dbType = DBType.pickup(url).orElseThrow(() -> new IllegalArgumentException("No suitable db"));
-    final int threadCount = 10;
+    final int threadCount = Integer.valueOf(args[3]);
+    final int rowBuffer = Integer.valueOf(args[4]);
+    assert threadCount > 0 : "thread count should be bigger than zero";
+    assert rowBuffer > 0 : "row buffer should be bigger than zero";
     final long rowsEachThread = Long.valueOf(args[2]) / threadCount;
     final long rowCount = rowsEachThread * threadCount;
     final AtomicLong progress = new AtomicLong(0);
@@ -167,7 +168,7 @@ public final class DataGenerator {
     final long startTime = System.currentTimeMillis();
     for (int i = 0; i < threadCount; ++i) {
       WriteThread writeThread = new WriteThread(url, queryAndWriters.getKey(), progress,
-              rowsEachThread, queryAndWriters.getValue());
+              rowsEachThread, queryAndWriters.getValue(), rowBuffer);
       writeThreads.add(writeThread);
       service.execute(writeThread);
     }
@@ -179,17 +180,19 @@ public final class DataGenerator {
             + (System.currentTimeMillis() - startTime) + " milliseconds");
   }
 
-  private static Pair<String, List<DataWriter>> createWriter(final String jdbcUrl, final DBType dbType, final TableName fullname) throws SQLException {
+  private static Pair<String, List<DataWriter>> createWriter(final String jdbcUrl,
+    final DBType dbType, final TableName fullname) throws SQLException {
     try (Connection con = DriverManager.getConnection(jdbcUrl)) {
       return createWriter(con, dbType, fullname);
     }
   }
 
-  private static Pair<String, List<DataWriter>> createWriter(final Connection con, final DBType dbType, final TableName fullname) throws SQLException {
+  private static Pair<String, List<DataWriter>> createWriter(final Connection con,
+    final DBType dbType, final TableName fullname) throws SQLException {
     DatabaseMetaData meta = con.getMetaData();
     try (ResultSet rset = meta.getColumns(null, fullname.getSchema(null), fullname.getName(), null)) {
       List<DataWriter> writers = new LinkedList<>();
-      Random rn = new Random();
+      RandomData rn = RandomDataFactory.create();
       StringBuilder queryBuilder = new StringBuilder();
       switch (dbType) {
         case PHOENIX:
@@ -212,53 +215,52 @@ public final class DataGenerator {
         ++columnCount;
         switch (type) {
           case Types.BINARY:
-            writers.add((stat, index) -> stat.setBinaryStream(index, new ByteArrayInputStream(String.valueOf(rn.nextLong()).getBytes())));
+            writers.add((stat, index) -> stat.setBinaryStream(index, new ByteArrayInputStream(String.valueOf(rn.getLong()).getBytes())));
             break;
           case Types.BIGINT:
-            writers.add((stat, index) -> stat.setLong(index, rn.nextLong()));
+            writers.add((stat, index) -> stat.setLong(index, rn.getLong()));
             break;
           case Types.BIT:
-            writers.add((stat, index) -> stat.setBoolean(index, rn.nextBoolean()));
+            writers.add((stat, index) -> stat.setBoolean(index, rn.getBoolean()));
             break;
           case Types.BOOLEAN:
-            writers.add((stat, index) -> stat.setBoolean(index, rn.nextBoolean()));
+            writers.add((stat, index) -> stat.setBoolean(index, rn.getBoolean()));
             break;
           case Types.DATE:
-            writers.add((stat, index) -> stat.setDate(index, new Date(System.currentTimeMillis())));
+            writers.add((stat, index) -> stat.setDate(index, new Date(rn.getCurrentTimeMs())));
             break;
           case Types.DECIMAL:
-            writers.add((stat, index) -> stat.setBigDecimal(index, new BigDecimal(rn.nextLong())));
+            writers.add((stat, index) -> stat.setBigDecimal(index, new BigDecimal(rn.getLong())));
             break;
           case Types.DOUBLE:
-            writers.add((stat, index) -> stat.setDouble(index, rn.nextDouble()));
+            writers.add((stat, index) -> stat.setDouble(index, rn.getDouble()));
             break;
           case Types.FLOAT:
-            writers.add((stat, index) -> stat.setFloat(index, rn.nextFloat()));
+            writers.add((stat, index) -> stat.setFloat(index, rn.getFloat()));
             break;
           case Types.INTEGER:
-            writers.add((stat, index) -> stat.setInt(index, rn.nextInt()));
+            writers.add((stat, index) -> stat.setInt(index, rn.getInteger()));
             break;
           case Types.SMALLINT:
-            writers.add((stat, index) -> stat.setShort(index, (short) rn.nextInt()));
+            writers.add((stat, index) -> stat.setShort(index, (short) rn.getInteger()));
             break;
           case Types.TIME:
-            writers.add((stat, index) -> stat.setTime(index, new Time(System.currentTimeMillis())));
+            writers.add((stat, index) -> stat.setTime(index, new Time(rn.getCurrentTimeMs())));
             break;
           case Types.TIMESTAMP:
-            writers.add((stat, index) -> stat.setTimestamp(index, new Timestamp(System.currentTimeMillis())));
+            writers.add((stat, index) -> stat.setTimestamp(index, new Timestamp(rn.getCurrentTimeMs())));
             break;
           case Types.TINYINT:
-            writers.add((stat, index) -> stat.setByte(index, (byte) rn.nextInt()));
+            writers.add((stat, index) -> stat.setByte(index, (byte) rn.getInteger()));
             break;
           case Types.VARBINARY:
-            writers.add((stat, index) -> stat.setBytes(index, Bytes.toBytes(rn.nextLong())));
+            writers.add((stat, index) -> stat.setBytes(index, Bytes.toBytes(rn.getLong())));
             break;
           case Types.VARCHAR:
-            writers.add((stat, index) -> stat.setString(index, String.valueOf(rn.nextLong())));
+            writers.add((stat, index) -> stat.setString(index, rn.getStringWithRandomSize(15)));
             break;
           default:
-            throw new RuntimeException(
-                    "Unsupported type : " + type);
+            throw new RuntimeException("Unsupported type : " + type);
         }
       }
       if (columnCount == 0) {
