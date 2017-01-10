@@ -9,17 +9,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-
 public class GenUnitCommand {
+
   private static final List<String> SKIPS = Arrays.asList(
+          "TestSpnegoHttpServer"
   );
   private static final String EXTRA_OPTS = null;
-  private static final String ISSUE = "hbase-17174";
+  private static final String ISSUE = "hbase-17408";
   private static final int LIMIT = -1;
   private static final int PARALLER = 1;
   private static final String HOME = "/Users/chia7712";
-  private static final String PATH = HOME + "/Dropbox/hbase-jira/" + ISSUE + "/unittest";
+  private static final String PATH = HOME + "/Dropbox/hbase-jira/" + ISSUE + "/unittest-branch-1";
   private static final boolean ALL_TEST = true;
+
   public static void main(String[] args) throws IOException {
     Map<String, Double> packages = new TreeMap<>();
     File dir = new File(PATH);
@@ -39,23 +41,25 @@ public class GenUnitCommand {
     System.out.println("----------------------");
     System.out.println(generate(packages));
   }
+
   public static String generate(Map<String, Double> packages) throws IOException {
     StringBuilder builder = new StringBuilder("mvn clean test -fae -Dtest.exclude.pattern=");
     packages.forEach((v, k) -> builder.append("**/").append(v).append(".java,"));
     builder.deleteCharAt(builder.length() - 1);
     builder.append(" -DsecondPartForkCount=")
-           .append(PARALLER);
+            .append(PARALLER);
     if (ALL_TEST) {
       builder.append(" -PrunAllTests");
     }
     if (EXTRA_OPTS != null && EXTRA_OPTS.length() != 0) {
       builder.append(" ")
-             .append(EXTRA_OPTS);
+              .append(EXTRA_OPTS);
     }
     builder.append(" | tee ~/test_")
-           .append(ISSUE);
+            .append(ISSUE);
     return builder.substring(0, builder.length());
   }
+
   private static Map<String, Double> findLargeElapsed(final File f, double limit) throws IOException {
     Map<String, Double> packages = new TreeMap<>();
     final String key1 = "Time elapsed: ";

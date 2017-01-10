@@ -1,4 +1,3 @@
-
 package codes.chia7712.contributor.maven;
 
 import java.io.BufferedReader;
@@ -9,8 +8,10 @@ import java.util.LinkedList;
 import java.util.List;
 
 public class GenMultiTests {
+
   private static final String ISSUE = "hbase-16992";
   private static final String PATH = "D:/Dropbox/hbase-jira/" + ISSUE + "/failedtests";
+
   public static void main(String[] args) throws IOException {
     List<String> failedTests = new LinkedList<>();
     for (File f : new File(PATH).listFiles()) {
@@ -23,8 +24,9 @@ public class GenMultiTests {
     failedTests.forEach(System.out::println);
     failedTests.forEach(s -> sb.append(s).append(","));
     System.out.println(sb.substring(0, sb.length() - 1));
-    
+
   }
+
   private static List<String> readLine(File f) throws IOException {
     List<String> failedTests = new LinkedList<>();
     try (BufferedReader reader = new BufferedReader(new FileReader(f))) {

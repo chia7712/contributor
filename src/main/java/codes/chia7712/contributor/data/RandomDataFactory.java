@@ -1,20 +1,21 @@
-
-package codes.chia7712.contributor.jdbc;
+package codes.chia7712.contributor.data;
 
 import java.util.Arrays;
 import java.util.Random;
 
-
 public class RandomDataFactory {
-  
-  private RandomDataFactory() {}
-  
+
+  private RandomDataFactory() {
+  }
+
   public static RandomData create() {
     return new SimpleRandomData();
   }
-  
+
   private static class SimpleRandomData implements RandomData {
+
     private final Random rn = new Random();
+
     @Override
     public long getLong() {
       return rn.nextLong();
@@ -61,6 +62,11 @@ public class RandomDataFactory {
     @Override
     public boolean getBoolean() {
       return rn.nextBoolean();
+    }
+
+    @Override
+    public int getInteger(int bound) {
+      return rn.nextInt(bound);
     }
   }
 }

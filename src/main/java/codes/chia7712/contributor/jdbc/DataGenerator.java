@@ -1,6 +1,12 @@
-
 package codes.chia7712.contributor.jdbc;
 
+import codes.chia7712.contributor.schedule.DispatcherFactory;
+import codes.chia7712.contributor.schedule.Dispatcher;
+import codes.chia7712.contributor.view.Progress;
+import codes.chia7712.contributor.data.RandomData;
+import codes.chia7712.contributor.data.RandomDataFactory;
+import codes.chia7712.contributor.schedule.Dispatcher.Packet;
+import codes.chia7712.contributor.view.Arguments;
 import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.math.BigDecimal;
@@ -14,8 +20,10 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.sql.Date;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -24,7 +32,7 @@ import javafx.util.Pair;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.util.Bytes;
-
+import org.apache.hadoop.hbase.util.Threads;
 
 /**
  * Puts some data to specified database.
@@ -40,15 +48,10 @@ public final class DataGenerator {
    * Write thread. End with commiting all rows.
    */
   public static final class WriteThread implements Runnable, Closeable {
-
-    /**
-     * Count the completed data.
-     */
-    private final AtomicLong progress;
-    /**
-     * Total cols.
-     */
-    private final long rowCount;
+    private static final Log LOG = LogFactory.getLog(WriteThread.class);
+    private static final AtomicLong IDS = new AtomicLong(0);
+    private final long id = IDS.getAndIncrement();
+    private final Dispatcher dispatcher;
     /**
      * Database connection.
      */
@@ -58,7 +61,6 @@ public final class DataGenerator {
      */
     private final String upsertSQL;
     private final List<DataWriter> writers;
-    private final int rowBuffer;
 
     /**
      * Constructs a write thread.
@@ -70,15 +72,12 @@ public final class DataGenerator {
      * @throws SQLException If failed to establish db connection
      */
     private WriteThread(final String url, final String upsertSQL,
-            final AtomicLong progress, final long rowCount,
-            final List<DataWriter> writers, int rowBuffer) throws SQLException {
-      this.progress = progress;
+            final Dispatcher dispatcher, final List<DataWriter> writers) throws SQLException {
+      this.dispatcher = dispatcher;
       this.conn = DriverManager.getConnection(url);
       this.conn.setAutoCommit(false);
       this.upsertSQL = upsertSQL;
-      this.rowCount = rowCount;
       this.writers = writers;
-      this.rowBuffer = rowBuffer;
     }
 
     @Override
@@ -90,34 +89,33 @@ public final class DataGenerator {
       }
     }
 
+    private void flush(PreparedStatement stat) throws SQLException {
+      stat.executeBatch();
+      conn.commit();
+      stat.clearBatch();
+    }
+
     @Override
     public void run() {
+      LOG.info("Start #" + id);
       try (PreparedStatement stat = conn.prepareStatement(upsertSQL)) {
-        long bufferCount = 0;
-        for (int row = 0; row != rowCount; ++row) {
-          int index = 1;
-          for (DataWriter writer : writers) {
-            writer.setData(stat, index);
-            ++index;
+        Optional<Packet> packet;
+        while ((packet = dispatcher.getPacket()).isPresent()) {
+          while (packet.get().hasNext()) {
+            int index = 1;
+            for (DataWriter writer : writers) {
+              writer.setData(stat, index);
+              ++index;
+            }
+            stat.addBatch();
           }
-          stat.addBatch();
-          ++bufferCount;
-          if (bufferCount % rowBuffer == 0) {
-            stat.executeBatch();
-            conn.commit();
-            stat.clearBatch();
-            progress.addAndGet(bufferCount);
-            bufferCount = 0;
-          }
-        }
-        if (bufferCount != 0) {
-          stat.executeBatch();
-          conn.commit();
-          stat.clearBatch();
-          progress.addAndGet(bufferCount);
+          flush(stat);
+          packet.get().commit();
         }
       } catch (SQLException ex) {
         LOG.error("Failed to manipulate database", ex);
+      } finally {
+        LOG.info("Start #" + id);
       }
     }
   }
@@ -130,65 +128,46 @@ public final class DataGenerator {
    * @throws Exception If any error
    */
   public static void main(final String[] args) throws Exception {
-    if (args.length != 5) {
-      System.out.println("[Usage]: <jdbc url> <table name> <row count> <thread count> <row buffer>");
-      System.exit(0);
-    }
-    final String url = args[0];
-    final TableName tableName = new TableName(args[1]);
+    Arguments arguments = new Arguments(
+            Arrays.asList(
+                    "url",
+                    "table",
+                    "rows",
+                    "threads"),
+            Arrays.asList("batchsize")
+    );
+    final String url = arguments.get("url");
+    final TableName tableName = new TableName(arguments.get("table"));
     final DBType dbType = DBType.pickup(url).orElseThrow(() -> new IllegalArgumentException("No suitable db"));
-    final int threadCount = Integer.valueOf(args[3]);
-    final int rowBuffer = Integer.valueOf(args[4]);
-    assert threadCount > 0 : "thread count should be bigger than zero";
-    assert rowBuffer > 0 : "row buffer should be bigger than zero";
-    final long rowsEachThread = Long.valueOf(args[2]) / threadCount;
-    final long rowCount = rowsEachThread * threadCount;
-    final AtomicLong progress = new AtomicLong(0);
+    final int threadCount = arguments.getInt("threads");
+    final long totalRows = arguments.getInt("rows");
+    final int batchSize = arguments.getInt("batchsize", 100);
     final Pair<String, List<DataWriter>> queryAndWriters = createWriter(url, dbType, tableName);
-    ExecutorService service = Executors.newFixedThreadPool(threadCount + 1);
+    ExecutorService service = Executors.newFixedThreadPool(threadCount, Threads.newDaemonThreadFactory("-" + WriteThread.class.getSimpleName()));
     List<WriteThread> writeThreads = new LinkedList<>();
-    service.execute(() -> {
-      try {
-        final long startTime = System.currentTimeMillis();
-        while (progress.get() != rowCount) {
-          TimeUnit.SECONDS.sleep(1);
-          long elapsed = System.currentTimeMillis() - startTime;
-          double average = (double) (progress.get() * 1000) / (double) elapsed;
-          long remaining = (long) ((rowCount - progress.get()) / average);
-          System.out.print("\r" + progress.get() + "/" + rowCount
-                  + ", " + average + " rows/second"
-                  + ", " + remaining + " seconds");
-        }
-      } catch (InterruptedException ex) {
-        LOG.error("Breaking the sleep", ex);
-      } finally {
-        System.out.println("\r" + progress.get() + "/" + rowCount);
+    Dispatcher dispatcher = DispatcherFactory.get(totalRows, () -> batchSize);
+    try (Progress progress = new Progress(dispatcher::getCommittedRows, totalRows)) {
+      for (int i = 0; i < threadCount; ++i) {
+        WriteThread writeThread = new WriteThread(url, queryAndWriters.getKey(),
+                dispatcher, queryAndWriters.getValue());
+        writeThreads.add(writeThread);
+        service.execute(writeThread);
       }
-    });
-    final long startTime = System.currentTimeMillis();
-    for (int i = 0; i < threadCount; ++i) {
-      WriteThread writeThread = new WriteThread(url, queryAndWriters.getKey(), progress,
-              rowsEachThread, queryAndWriters.getValue(), rowBuffer);
-      writeThreads.add(writeThread);
-      service.execute(writeThread);
+      service.shutdown();
+      service.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+      writeThreads.forEach(t -> t.close());
     }
-    service.shutdown();
-    service.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
-    writeThreads.forEach(t -> t.close());
-    System.out.println("Total rows : " + rowCount);
-    System.out.println("Elapsed : "
-            + (System.currentTimeMillis() - startTime) + " milliseconds");
   }
 
   private static Pair<String, List<DataWriter>> createWriter(final String jdbcUrl,
-    final DBType dbType, final TableName fullname) throws SQLException {
+          final DBType dbType, final TableName fullname) throws SQLException {
     try (Connection con = DriverManager.getConnection(jdbcUrl)) {
       return createWriter(con, dbType, fullname);
     }
   }
 
   private static Pair<String, List<DataWriter>> createWriter(final Connection con,
-    final DBType dbType, final TableName fullname) throws SQLException {
+          final DBType dbType, final TableName fullname) throws SQLException {
     DatabaseMetaData meta = con.getMetaData();
     try (ResultSet rset = meta.getColumns(null, fullname.getSchema(null), fullname.getName(), null)) {
       List<DataWriter> writers = new LinkedList<>();

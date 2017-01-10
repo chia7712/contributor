@@ -1,4 +1,3 @@
-
 package codes.chia7712.contributor.jdbc;
 
 import java.util.Optional;
@@ -76,7 +75,6 @@ public final class TableName implements Comparable<TableName> {
   public String getName() {
     return name;
   }
-
 
   /**
    * @param defaultValue

@@ -1,4 +1,3 @@
-
 package codes.chia7712.contributor.jdbc;
 
 import java.util.Optional;

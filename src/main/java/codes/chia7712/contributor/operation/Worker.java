@@ -1,52 +1,46 @@
 package codes.chia7712.contributor.operation;
 
+import codes.chia7712.contributor.schedule.Dispatcher;
+import codes.chia7712.contributor.schedule.Dispatcher.Packet;
 import java.io.IOException;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Table;
 
 public final class Worker implements Runnable {
-  private static final long REPORT_PERIOOD = 5000; //sec
-  private static final AtomicInteger ID = new AtomicInteger(0);
-  private final int id = ID.getAndIncrement();
-  private final int startIndex;
-  private final int endIndex;
+  private static final Log LOG = LogFactory.getLog(Worker.class);
+  private static final AtomicLong IDS = new AtomicLong(0);
+  private final long id = IDS.getAndIncrement();
+  private final Dispatcher dispatcher;
   private final byte[] cf;
   private final Table table;
   private final Slave slave;
   private final Durability durability;
-  private long cellCount = 0;
-  private long totalRows = 0;
-  Worker(final int startIndex, final int endIndex, byte[] cf,
-    final Durability durability, Table table, final Slave slave) {
-    this.startIndex = startIndex;
-    this.endIndex = endIndex;
+
+  Worker(Table table, byte[] cf, final Durability durability,
+          Dispatcher dispatcher, final Slave slave) {
     this.cf = cf;
     this.table = table;
     this.durability = durability;
     this.slave = slave;
-  }
-  public long getCellCount() {
-    return cellCount;
-  }
-  public long getTotalRows() {
-    return totalRows;
+    this.dispatcher = dispatcher;
   }
 
   @Override
   public void run() {
-    long startTime = System.currentTimeMillis();
+    LOG.info("Start #" + id);
     try {
-      for (int index = startIndex; index != endIndex; ++index) {
-        ++totalRows;
-        cellCount += slave.work(table, index, cf, durability);
-        if (System.currentTimeMillis() - startTime >= REPORT_PERIOOD) {
-          System.out.println("#" + id + " "
-                + totalRows + "/" + (endIndex - startIndex) + " current/total");
-          startTime = System.currentTimeMillis();
+      Optional<Packet> packet;
+      while ((packet = dispatcher.getPacket()).isPresent()) {
+        while (packet.get().hasNext()) {
+          slave.work(table, packet.get().next(), cf, durability);
         }
+        slave.completePacket(table);
+        packet.get().commit();
       }
-      cellCount += slave.finish(table);
     } catch (IOException ex) {
       throw new RuntimeException(ex);
     } catch (InterruptedException ex) {
@@ -56,6 +50,8 @@ public final class Worker implements Runnable {
         table.close();
       } catch (IOException ex) {
         throw new RuntimeException(ex);
+      } finally {
+        LOG.info("Close #" + id);
       }
     }
   }
