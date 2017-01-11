@@ -42,25 +42,26 @@ public class BatchSlave implements Slave {
   @Override
   public void work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
     Row row = null;
+    byte[] qual = Bytes.toBytes(RANDOM.getLong());
     switch (types.get()) {
       case PUT:
         Put put = new Put(createRow(rowIndex));
-        put.addColumn(cf, cf, Bytes.toBytes(rowIndex));
+        put.addColumn(cf, qual, Bytes.toBytes(rowIndex));
         row = put;
         break;
       case DELETE:
         Delete delete = new Delete(createRow(rowIndex));
-        delete.addColumn(cf, cf);
+        delete.addColumn(cf, qual);
         row = delete;
         break;
       case GET:
         Get get = new Get(createRow(rowIndex));
-        get.addColumn(cf, cf);
+        get.addColumn(cf, qual);
         row = get;
         break;
       case INCREMENT:
         Increment inc = new Increment(createRow(rowIndex));
-        inc.addColumn(cf, cf, rowIndex);
+        inc.addColumn(cf, qual, rowIndex);
         row = inc;
         break;
       default:
