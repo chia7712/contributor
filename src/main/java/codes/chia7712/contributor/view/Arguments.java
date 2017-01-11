@@ -80,10 +80,10 @@ public class Arguments {
 
   private String generateErrorMsg(List<String> missedKeys) {
     StringBuilder builder = new StringBuilder("These arguments is required: ");
-    missedKeys.forEach(v -> builder.append(v).append(" "));
+    missedKeys.forEach(v -> builder.append("<").append(v).append("> "));
     if (!options.isEmpty()) {
       builder.append("\nThese arguments is optional: ");
-      options.forEach(v -> builder.append(v).append(" "));
+      options.forEach(v -> builder.append("<").append(v).append("> "));
     }
     if (otherMsg != null) {
       builder.append("\nothers: ")

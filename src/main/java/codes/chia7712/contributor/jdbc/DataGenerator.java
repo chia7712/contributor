@@ -136,6 +136,7 @@ public final class DataGenerator {
                     "threads"),
             Arrays.asList("batchsize")
     );
+    arguments.validate(args);
     final String url = arguments.get("url");
     final TableName tableName = new TableName(arguments.get("table"));
     final DBType dbType = DBType.pickup(url).orElseThrow(() -> new IllegalArgumentException("No suitable db"));
