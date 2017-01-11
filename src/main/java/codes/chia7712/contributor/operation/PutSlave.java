@@ -11,11 +11,19 @@ import org.apache.hadoop.hbase.util.Bytes;
 public class PutSlave implements Slave {
 
   private final List<Put> puts = new ArrayList<>();
+  private final int qualifierNumber;
+
+  public PutSlave(final int qualifierNumber) {
+    this.qualifierNumber = qualifierNumber;
+  }
 
   @Override
   public void work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
     Put put = new Put(createRow(rowIndex));
-    put.addColumn(cf, cf, Bytes.toBytes(rowIndex));
+    byte[] value = Bytes.toBytes(rowIndex);
+    for (int i = 0; i != qualifierNumber; ++i) {
+      put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
+    }
     puts.add(put);
   }
 

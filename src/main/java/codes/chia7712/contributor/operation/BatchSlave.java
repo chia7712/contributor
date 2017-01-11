@@ -21,9 +21,11 @@ public class BatchSlave implements Slave {
   private final List<Row> rows = new ArrayList<>();
   private Object[] objs = null;
   private final Supplier<Type> types;
-
-  BatchSlave(final Supplier<Type> types) {
+  private final int qualifierNumber;
+  BatchSlave(final Supplier<Type> types, int qualifierNumber) {
     this.types = types;
+    this.qualifierNumber = qualifierNumber;
+    assert qualifierNumber > 0;
   }
 
   private Object[] getObjects() {
@@ -42,26 +44,35 @@ public class BatchSlave implements Slave {
   @Override
   public void work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
     Row row = null;
-    byte[] qual = Bytes.toBytes(RANDOM.getLong());
+    
     switch (types.get()) {
       case PUT:
         Put put = new Put(createRow(rowIndex));
-        put.addColumn(cf, qual, Bytes.toBytes(rowIndex));
+        byte[] value = Bytes.toBytes(rowIndex);
+        for (int i = 0; i != qualifierNumber; ++i) {
+          put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
+        }
         row = put;
         break;
       case DELETE:
         Delete delete = new Delete(createRow(rowIndex));
-        delete.addColumn(cf, qual);
+        for (int i = 0; i != qualifierNumber; ++i) {
+          delete.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
+        }
         row = delete;
         break;
       case GET:
         Get get = new Get(createRow(rowIndex));
-        get.addColumn(cf, qual);
+        for (int i = 0; i != qualifierNumber; ++i) {
+          get.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
+        }
         row = get;
         break;
       case INCREMENT:
         Increment inc = new Increment(createRow(rowIndex));
-        inc.addColumn(cf, qual, rowIndex);
+        for (int i = 0; i != qualifierNumber; ++i) {
+          inc.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), rowIndex);
+        }
         row = inc;
         break;
       default:

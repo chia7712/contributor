@@ -31,7 +31,7 @@ public class DataGenerator {
                     "cf",
                     "rows",
                     "op"),
-            Arrays.asList("durability", "batchsize"),
+            Arrays.asList("durability", "batch_size", "qualifier_number"),
             Operation.getDescription()
     );
     arguments.validate(args);
@@ -41,14 +41,15 @@ public class DataGenerator {
     final int totalRows = arguments.getInt("rows");
     final Operation op = Operation.valueOf(arguments.get("op").toUpperCase());
     final Durability durability = Durability.valueOf(arguments.get("durability", Durability.USE_DEFAULT.name()).toUpperCase());
-    final int batchSize = arguments.getInt("batchsize", 100);
+    final int batchSize = arguments.getInt("batch_size", 100);
+    final int qualifierNumber = arguments.getInt("qualifier_number", 1);
     try (Connection con = ConnectionFactory.createConnection()) {
       ExecutorService service = Executors.newFixedThreadPool(threads, Threads.newDaemonThreadFactory("-" + op.name()));
       List<Worker> workers = new ArrayList<>(threads);
       Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
       LOG.info("Generator " + threads + " threads");
       for (int i = 0; i != threads; ++i) {
-        workers.add(new Worker(con.getTable(tableName), cf, durability, dispatcher, op.newSlave()));
+        workers.add(new Worker(con.getTable(tableName), cf, durability, dispatcher, op.newSlave(qualifierNumber)));
       }
       try (Progress progress = new Progress(dispatcher::getCommittedRows, totalRows)) {
         LOG.info("submit " + threads + " threads");

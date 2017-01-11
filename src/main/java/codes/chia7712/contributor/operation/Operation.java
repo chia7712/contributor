@@ -13,23 +13,23 @@ public enum Operation {
     return builder.toString();
   }
 
-  public Slave newSlave() {
+  public Slave newSlave(int qualifier) {
     switch (this) {
       case NORMAL_PUT:
-        return new PutSlave();
+        return new PutSlave(qualifier);
       case BATCH_PUT:
-        return new BatchSlave(() -> BatchSlave.Type.PUT);
+        return new BatchSlave(() -> BatchSlave.Type.PUT, qualifier);
       case BATCH_DELETE:
-        return new BatchSlave(() -> BatchSlave.Type.DELETE);
+        return new BatchSlave(() -> BatchSlave.Type.DELETE, qualifier);
       case BATCH_INCREMENT:
-        return new BatchSlave(() -> BatchSlave.Type.INCREMENT);
+        return new BatchSlave(() -> BatchSlave.Type.INCREMENT, qualifier);
       case BATCH_GET:
-        return new BatchSlave(() -> BatchSlave.Type.GET);
+        return new BatchSlave(() -> BatchSlave.Type.GET, qualifier);
       case BATCH_RANDOM:
         return new BatchSlave(() -> {
           int index = (int) (Math.random() * BatchSlave.Type.values().length);
           return BatchSlave.Type.values()[index];
-        });
+        }, qualifier);
       default:
         throw new RuntimeException("Unsupported operation:" + this);
     }

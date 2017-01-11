@@ -135,7 +135,7 @@ public final class DataGenerator {
                     "table",
                     "rows",
                     "threads"),
-            Arrays.asList("batchsize")
+            Arrays.asList("batch_size")
     );
     arguments.validate(args);
     final String url = arguments.get("url");
@@ -143,7 +143,7 @@ public final class DataGenerator {
     final DBType dbType = DBType.pickup(url).orElseThrow(() -> new IllegalArgumentException("No suitable db"));
     final int threadCount = arguments.getInt("threads");
     final long totalRows = arguments.getInt("rows");
-    final int batchSize = arguments.getInt("batchsize", 100);
+    final int batchSize = arguments.getInt("batch_size", 100);
     final Pair<String, List<DataWriter>> queryAndWriters = createWriter(url, dbType, tableName);
     ExecutorService service = Executors.newFixedThreadPool(threadCount, Threads.newDaemonThreadFactory("-" + WriteThread.class.getSimpleName()));
     List<WriteThread> writeThreads = new LinkedList<>();
