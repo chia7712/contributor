@@ -17,6 +17,7 @@ public class TestDispatcher {
   public void testIteratorWithConstantBound() throws InterruptedException {
     testIterator(100, () -> 10, 5);
     testIterator(100, () -> 7, 5);
+    testIterator(100, () -> 100, 5);
   }
 
   @Test(timeout = 5000)

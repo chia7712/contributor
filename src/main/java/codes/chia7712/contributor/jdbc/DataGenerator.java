@@ -102,6 +102,7 @@ public final class DataGenerator {
         Optional<Packet> packet;
         while ((packet = dispatcher.getPacket()).isPresent()) {
           while (packet.get().hasNext()) {
+            packet.get().next();
             int index = 1;
             for (DataWriter writer : writers) {
               writer.setData(stat, index);
@@ -115,7 +116,7 @@ public final class DataGenerator {
       } catch (SQLException ex) {
         LOG.error("Failed to manipulate database", ex);
       } finally {
-        LOG.info("Start #" + id);
+        LOG.info("Close #" + id);
       }
     }
   }
