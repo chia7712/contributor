@@ -19,7 +19,7 @@ public final class Worker implements Runnable {
   private final Table table;
   private final Slave slave;
   private final Durability durability;
-
+  private final AtomicLong rowCount = new AtomicLong(0);
   Worker(Table table, byte[] cf, final Durability durability,
           Dispatcher dispatcher, final Slave slave) {
     this.cf = cf;
@@ -29,17 +29,24 @@ public final class Worker implements Runnable {
     this.dispatcher = dispatcher;
   }
 
+  public long getRowCount() {
+    return rowCount.get();
+  }
+
   @Override
   public void run() {
     LOG.info("Start #" + id);
     try {
       Optional<Packet> packet;
       while ((packet = dispatcher.getPacket()).isPresent()) {
+        int count = 0;
         while (packet.get().hasNext()) {
-          slave.work(table, packet.get().next(), cf, durability);
+          long next = packet.get().next();
+          count += slave.work(table, next, cf, durability);
         }
-        slave.completePacket(table);
+        count += slave.complete(table);
         packet.get().commit();
+        rowCount.addAndGet(count);
       }
     } catch (IOException ex) {
       throw new RuntimeException(ex);
@@ -51,7 +58,7 @@ public final class Worker implements Runnable {
       } catch (IOException ex) {
         throw new RuntimeException(ex);
       } finally {
-        LOG.info("Close #" + id);
+        LOG.info("Close #" + id + ", rows:" + getRowCount());
       }
     }
   }

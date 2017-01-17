@@ -18,19 +18,24 @@ public class PutSlave implements Slave {
   }
 
   @Override
-  public void work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
+  public int work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
     Put put = new Put(createRow(rowIndex));
     byte[] value = Bytes.toBytes(rowIndex);
     for (int i = 0; i != qualifierNumber; ++i) {
       put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
     }
     puts.add(put);
+    return 0;
   }
 
   @Override
-  public void completePacket(Table table) throws IOException, InterruptedException {
-    table.put(puts);
-    puts.clear();
+  public int complete(Table table) throws IOException, InterruptedException {
+    try {
+      table.put(puts);
+      return puts.size();
+    } finally {
+      puts.clear();
+    }
   }
 
 }

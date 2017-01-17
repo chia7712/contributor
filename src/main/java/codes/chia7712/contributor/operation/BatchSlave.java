@@ -21,11 +21,12 @@ public class BatchSlave implements Slave {
   private final List<Row> rows = new ArrayList<>();
   private Object[] objs = null;
   private final Supplier<Type> types;
-  private final int qualifierNumber;
-  BatchSlave(final Supplier<Type> types, int qualifierNumber) {
+  private final int columnNumber;
+
+  BatchSlave(final Supplier<Type> types, int columnNumber) {
     this.types = types;
-    this.qualifierNumber = qualifierNumber;
-    assert qualifierNumber > 0;
+    this.columnNumber = columnNumber;
+    assert columnNumber > 0;
   }
 
   private Object[] getObjects() {
@@ -36,41 +37,44 @@ public class BatchSlave implements Slave {
   }
 
   @Override
-  public final void completePacket(final Table table) throws IOException, InterruptedException {
-    table.batch(rows, getObjects());
-    rows.clear();
+  public final int complete(final Table table) throws IOException, InterruptedException {
+    try {
+      table.batch(rows, getObjects());
+      return rows.size();
+    } finally {
+      rows.clear();
+    }
   }
 
   @Override
-  public void work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
+  public int work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
     Row row = null;
-    
     switch (types.get()) {
       case PUT:
         Put put = new Put(createRow(rowIndex));
         byte[] value = Bytes.toBytes(rowIndex);
-        for (int i = 0; i != qualifierNumber; ++i) {
+        for (int i = 0; i != columnNumber; ++i) {
           put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
         }
         row = put;
         break;
       case DELETE:
         Delete delete = new Delete(createRow(rowIndex));
-        for (int i = 0; i != qualifierNumber; ++i) {
+        for (int i = 0; i != columnNumber; ++i) {
           delete.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
         }
         row = delete;
         break;
       case GET:
         Get get = new Get(createRow(rowIndex));
-        for (int i = 0; i != qualifierNumber; ++i) {
+        for (int i = 0; i != columnNumber; ++i) {
           get.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
         }
         row = get;
         break;
       case INCREMENT:
         Increment inc = new Increment(createRow(rowIndex));
-        for (int i = 0; i != qualifierNumber; ++i) {
+        for (int i = 0; i != columnNumber; ++i) {
           inc.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), rowIndex);
         }
         row = inc;
@@ -79,5 +83,6 @@ public class BatchSlave implements Slave {
         throw new RuntimeException("Why error?");
     }
     rows.add(row);
+    return 0;
   }
 }

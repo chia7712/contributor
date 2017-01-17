@@ -19,7 +19,7 @@ public class Progress implements Closeable {
   private final ExecutorService service = Executors.newSingleThreadExecutor();
 
   public Progress(Supplier<Long> submittedRows, long totalRow) {
-    this(submittedRows, totalRow, System.out::println);
+    this(submittedRows, totalRow, LOG::info);
   }
 
   public Progress(Supplier<Long> submittedRows, long totalRow, Consumer<String> output) {
@@ -30,14 +30,14 @@ public class Progress implements Closeable {
           long elapsed = System.currentTimeMillis() - startTime;
           double average = (double) (submittedRows.get() * 1000) / (double) elapsed;
           long remaining = (long) ((totalRow - submittedRows.get()) / average);
-          output.accept("\r" + submittedRows.get() + "/" + totalRow
+          output.accept(submittedRows.get() + "/" + totalRow
                   + ", " + average + " rows/second"
                   + ", " + remaining + " seconds");
         }
       } catch (InterruptedException ex) {
         LOG.error("Breaking the sleep", ex);
       } finally {
-        output.accept("\r" + submittedRows.get() + "/" + totalRow
+        output.accept(submittedRows.get() + "/" + totalRow
                 + ", elapsed:" + (System.currentTimeMillis() - startTime));
       }
     });

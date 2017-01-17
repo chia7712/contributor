@@ -57,6 +57,7 @@ public class DataGenerator {
         service.shutdown();
         service.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
       }
+      LOG.info("matched row:" + workers.stream().mapToLong(v -> v.getRowCount()).sum());
     }
   }
 }

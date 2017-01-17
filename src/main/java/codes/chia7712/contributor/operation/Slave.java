@@ -24,10 +24,10 @@ public interface Slave {
           "8-",
           "9-");
 
-  void work(final Table table, final long rowIndex,
+  int work(final Table table, final long rowIndex,
           final byte[] cf, Durability durability) throws IOException;
 
-  void completePacket(final Table table) throws IOException, InterruptedException;
+  int complete(final Table table) throws IOException, InterruptedException;
 
   default byte[] createRow(long currentIndex) {
     int index = RANDOM.getInteger(KEYS.size());
