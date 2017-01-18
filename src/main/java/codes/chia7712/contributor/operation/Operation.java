@@ -2,17 +2,6 @@ package codes.chia7712.contributor.operation;
 
 public enum Operation {
   NORMAL_PUT, BATCH_PUT, BATCH_DELETE, BATCH_INCREMENT, BATCH_GET, BATCH_RANDOM, SCAN;
-
-  public static String getDescription() {
-    StringBuilder builder = new StringBuilder("op:");
-    for (Operation op : Operation.values()) {
-      builder.append(op.name())
-              .append(",");
-    }
-    builder.deleteCharAt(builder.length() - 1);
-    return builder.toString();
-  }
-
   public Slave newSlave(int columnNumber) {
     switch (this) {
       case SCAN:

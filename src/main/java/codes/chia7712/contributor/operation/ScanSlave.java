@@ -14,11 +14,12 @@ import org.apache.hadoop.hbase.util.Bytes;
 public class ScanSlave implements Slave {
   private final TreeSet<byte[]> rows = new TreeSet<>(Bytes.BYTES_COMPARATOR);
   private final Set<byte[]> columns = new TreeSet<>(Bytes.BYTES_COMPARATOR);
+  private long rowCount = 0;
+  private long cellCount = 0;
   @Override
-  public int work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
+  public void work(Table table, long rowIndex, Set<byte[]> cfs, Durability durability) throws IOException {
     rows.add(createRow(rowIndex));
-    columns.add(cf);
-    return 0;
+    columns.addAll(cfs);
   }
 
   private Scan createScan() {
@@ -30,22 +31,33 @@ public class ScanSlave implements Slave {
   }
 
   @Override
-  public int complete(Table table) throws IOException, InterruptedException {
+  public void complete(Table table) throws IOException, InterruptedException {
     try (ResultScanner scanner = table.getScanner(createScan())) {
       int count = 0;
       for (Result r : scanner) {
         if (!r.isEmpty()) {
           ++count;
+          ++rowCount;
+          cellCount += r.rawCells().length;
         }
         if (count >= rows.size()) {
           break;
         }
       }
-      return count;
     } finally {
       rows.clear();
       columns.clear();
     }
+  }
+
+  @Override
+  public long getCellCount() {
+    return cellCount;
+  }
+
+  @Override
+  public long getRowCount() {
+    return rowCount;
   }
   
 }

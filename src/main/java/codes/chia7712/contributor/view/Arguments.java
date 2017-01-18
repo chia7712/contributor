@@ -1,6 +1,7 @@
 package codes.chia7712.contributor.view;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -11,23 +12,24 @@ public class Arguments {
 
   private final List<String> options;
   private final List<String> keys;
-  private final String otherMsg;
+  private final List<String> otherMsg;
   private final Map<String, String> input = new TreeMap<>();
 
   public Arguments(final List<String> keys) {
-    this(keys, Collections.EMPTY_LIST, null);
+    this(keys, Collections.EMPTY_LIST);
   }
 
   public Arguments(final List<String> keys, final List<String> options) {
-    this(keys, options, null);
+    this(keys, options, Collections.EMPTY_LIST);
   }
 
-  public Arguments(final List<String> keys, final List<String> options, final String otherMsg) {
+  public Arguments(final List<String> keys, final List<String> options, final List<String> otherMsg) {
     this.keys = new ArrayList<>(keys.size());
     keys.forEach(v -> this.keys.add(v.toLowerCase()));
     this.options = new ArrayList<>(options.size());
     options.forEach(v -> this.options.add(v.toLowerCase()));
-    this.otherMsg = otherMsg;
+    this.otherMsg = new ArrayList<>(otherMsg.size());
+    this.otherMsg.addAll(otherMsg);
   }
 
   public String get(final String key, final String defaultValue) {
@@ -86,8 +88,8 @@ public class Arguments {
       options.forEach(v -> builder.append("<").append(v).append("> "));
     }
     if (otherMsg != null) {
-      builder.append("\nothers: ")
-              .append(otherMsg);
+      builder.append("\nothers:\n");
+      otherMsg.forEach((s) -> builder.append(s).append("\n"));
     }
     return builder.toString();
   }

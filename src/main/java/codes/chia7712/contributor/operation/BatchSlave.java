@@ -3,6 +3,7 @@ package codes.chia7712.contributor.operation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Durability;
@@ -21,12 +22,13 @@ public class BatchSlave implements Slave {
   private final List<Row> rows = new ArrayList<>();
   private Object[] objs = null;
   private final Supplier<Type> types;
-  private final int columnNumber;
-
-  BatchSlave(final Supplier<Type> types, int columnNumber) {
+  private final int qualifierNumber;
+  private long rowCount = 0;
+  private long cellCount = 0;
+  BatchSlave(final Supplier<Type> types, int qualifierNumber) {
     this.types = types;
-    this.columnNumber = columnNumber;
-    assert columnNumber > 0;
+    this.qualifierNumber = qualifierNumber;
+    assert qualifierNumber > 0;
   }
 
   private Object[] getObjects() {
@@ -37,52 +39,75 @@ public class BatchSlave implements Slave {
   }
 
   @Override
-  public final int complete(final Table table) throws IOException, InterruptedException {
+  public void complete(final Table table) throws IOException, InterruptedException {
     try {
       table.batch(rows, getObjects());
-      return rows.size();
     } finally {
       rows.clear();
     }
   }
 
   @Override
-  public int work(Table table, long rowIndex, byte[] cf, Durability durability) throws IOException {
+  public void work(Table table, long rowIndex, Set<byte[]> cfs, Durability durability) throws IOException {
     Row row = null;
     switch (types.get()) {
       case PUT:
         Put put = new Put(createRow(rowIndex));
+        put.setDurability(durability);
         byte[] value = Bytes.toBytes(rowIndex);
-        for (int i = 0; i != columnNumber; ++i) {
-          put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
+        for (byte[] cf : cfs) {
+          for (int i = 0; i != qualifierNumber; ++i) {
+            put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
+            ++cellCount;
+          }
         }
         row = put;
         break;
       case DELETE:
         Delete delete = new Delete(createRow(rowIndex));
-        for (int i = 0; i != columnNumber; ++i) {
-          delete.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
+        delete.setDurability(durability);
+        for (byte[] cf : cfs) {
+          for (int i = 0; i != qualifierNumber; ++i) {
+            delete.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
+            ++cellCount;
+          }
         }
         row = delete;
         break;
       case GET:
         Get get = new Get(createRow(rowIndex));
-        for (int i = 0; i != columnNumber; ++i) {
-          get.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
+        for (byte[] cf : cfs) {
+          for (int i = 0; i != qualifierNumber; ++i) {
+            get.addColumn(cf, Bytes.toBytes(RANDOM.getLong()));
+            ++cellCount;
+          }
         }
         row = get;
         break;
       case INCREMENT:
         Increment inc = new Increment(createRow(rowIndex));
-        for (int i = 0; i != columnNumber; ++i) {
-          inc.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), rowIndex);
+        inc.setDurability(durability);
+        for (byte[] cf : cfs) {
+          for (int i = 0; i != qualifierNumber; ++i) {
+            inc.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), rowIndex);
+            ++cellCount;
+          }
         }
         row = inc;
         break;
       default:
         throw new RuntimeException("Why error?");
     }
+    ++rowCount;
     rows.add(row);
-    return 0;
+  }
+  @Override
+  public long getCellCount() {
+    return cellCount;
+  }
+
+  @Override
+  public long getRowCount() {
+    return rowCount;
   }
 }
