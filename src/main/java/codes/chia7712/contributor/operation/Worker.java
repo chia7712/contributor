@@ -33,7 +33,7 @@ public final class Worker implements Runnable {
     this.dispatcher = dispatcher;
   }
 
-  public WorkResult getWorkResult() {
+  WorkResult getWorkResult() {
     return new WorkResult(slave.getRowCount(), slave.getCellCount());
   }
 

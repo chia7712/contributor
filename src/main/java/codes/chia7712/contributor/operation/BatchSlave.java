@@ -57,7 +57,7 @@ public class BatchSlave implements Slave {
         byte[] value = Bytes.toBytes(rowIndex);
         for (byte[] cf : cfs) {
           for (int i = 0; i != qualifierNumber; ++i) {
-            put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
+            put.addImmutable(cf, Bytes.toBytes(RANDOM.getLong()), value);
             ++cellCount;
           }
         }
