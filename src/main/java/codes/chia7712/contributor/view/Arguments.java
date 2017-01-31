@@ -1,7 +1,6 @@
 package codes.chia7712.contributor.view;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +55,14 @@ public class Arguments {
       return defaultValue;
     }
   }
-
+  public boolean getBoolean(final String key, final boolean defaultValue) {
+    String value = input.get(key);
+    if (value != null) {
+      return Boolean.valueOf(value);
+    } else {
+      return defaultValue;
+    }
+  }
   public long getLong(final String key, final long defaultValue) {
     String value = input.get(key);
     if (value != null) {

@@ -9,9 +9,9 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 
-public class PutSlave implements Slave {
+public abstract class PutSlave {
 
-  private final List<Put> puts = new ArrayList<>();
+  protected final List<Put> puts = new ArrayList<>();
   private final int qualifierNumber;
   private long cellCount = 0;
   private long rowCount = 0;
@@ -19,35 +19,23 @@ public class PutSlave implements Slave {
     this.qualifierNumber = qualifierNumber;
   }
 
-  @Override
-  public void work(Table table, long rowIndex, Set<byte[]> cfs, Durability durability) throws IOException {
-    Put put = new Put(createRow(rowIndex));
+  protected void prepareData(long rowIndex, Set<byte[]> cfs, Durability durability) {
+    Put put = new Put(RowIndexer.createRow(rowIndex));
     put.setDurability(durability);
     byte[] value = Bytes.toBytes(rowIndex);
     ++rowCount;
     for (byte[] cf : cfs) {
       for (int i = 0; i != qualifierNumber; ++i) {
-        put.addColumn(cf, Bytes.toBytes(RANDOM.getLong()), value);
+        put.addColumn(cf, Bytes.toBytes(RowIndexer.getRandomData().getLong()), value);
         ++cellCount;
       }
     }
-    puts.add(put);
+    puts.add(put);  
   }
-
-  @Override
-  public void complete(Table table) throws IOException, InterruptedException {
-    try {
-      table.put(puts);
-    } finally {
-      puts.clear();
-    }
-  }
-  @Override
   public long getCellCount() {
     return cellCount;
   }
 
-  @Override
   public long getRowCount() {
     return rowCount;
   }
