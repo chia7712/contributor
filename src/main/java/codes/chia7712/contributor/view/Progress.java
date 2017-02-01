@@ -17,34 +17,37 @@ public class Progress implements Closeable {
   private final long startTime = System.currentTimeMillis();
   private final AtomicBoolean closed = new AtomicBoolean(false);
   private final ExecutorService service = Executors.newSingleThreadExecutor();
-
+  private final Consumer<String> output;
   public Progress(Supplier<Long> submittedRows, long totalRow) {
     this(submittedRows, totalRow, LOG::info);
   }
 
   public Progress(Supplier<Long> submittedRows, long totalRow, Consumer<String> output) {
     service.execute(() -> {
+      long currentRow = 0;
       try {
-        while (!closed.get() && submittedRows.get() != totalRow) {
+        while (!closed.get() && (currentRow = submittedRows.get()) != totalRow) {
           TimeUnit.SECONDS.sleep(1);
           long elapsed = System.currentTimeMillis() - startTime;
-          double average = (double) (submittedRows.get() * 1000) / (double) elapsed;
-          long remaining = (long) ((totalRow - submittedRows.get()) / average);
-          output.accept(submittedRows.get() + "/" + totalRow
+          double average = (double) (currentRow * 1000) / (double) elapsed;
+          long remaining = (long) ((totalRow - currentRow) / average);
+          output.accept(currentRow + "/" + totalRow
                   + ", " + average + " rows/second"
                   + ", " + remaining + " seconds");
         }
       } catch (InterruptedException ex) {
         LOG.error("Breaking the sleep", ex);
       } finally {
-        output.accept(submittedRows.get() + "/" + totalRow
+        output.accept(currentRow + "/" + totalRow
                 + ", elapsed:" + (System.currentTimeMillis() - startTime));
       }
     });
+    this.output = output;
   }
 
   @Override
   public void close() throws IOException {
+    output.accept("elapsed:" + (System.currentTimeMillis() - startTime));
     closed.set(true);
     try {
       service.shutdown();

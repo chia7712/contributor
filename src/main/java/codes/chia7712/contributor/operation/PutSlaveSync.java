@@ -41,5 +41,10 @@ public class PutSlaveSync extends PutSlave implements Slave {
   public boolean isAsync() {
     return false;
   }
+
+  @Override
+  public void close() throws IOException {
+    table.close();
+  }
   
 }

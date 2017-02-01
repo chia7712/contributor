@@ -48,4 +48,9 @@ public class BatchSlaveSync extends BatchSlave implements Slave {
   public boolean isAsync() {
     return false;
   }
+
+  @Override
+  public void close() throws IOException {
+    table.close();
+  }
 }

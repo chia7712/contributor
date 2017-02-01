@@ -70,5 +70,10 @@ public class ScanSlaveSync implements Slave {
     return false;
   }
 
+  @Override
+  public void close() throws IOException {
+    table.close();
+  }
+
 
 }

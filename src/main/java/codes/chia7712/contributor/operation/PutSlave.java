@@ -1,12 +1,10 @@
 package codes.chia7712.contributor.operation;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 
 public abstract class PutSlave {
@@ -26,7 +24,7 @@ public abstract class PutSlave {
     ++rowCount;
     for (byte[] cf : cfs) {
       for (int i = 0; i != qualifierNumber; ++i) {
-        put.addColumn(cf, Bytes.toBytes(RowIndexer.getRandomData().getLong()), value);
+        put.addImmutable(cf, Bytes.toBytes(RowIndexer.getRandomData().getLong()), value);
         ++cellCount;
       }
     }

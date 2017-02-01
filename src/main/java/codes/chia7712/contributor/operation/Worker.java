@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.client.Durability;
@@ -48,14 +50,20 @@ public final class Worker implements Runnable {
         packet.get().commit();
         rowCount.addAndGet(count);
       }
-    } catch (IOException ex) {
-      throw new RuntimeException(ex);
-    } catch (InterruptedException ex) {
+    } catch (IOException | InterruptedException ex) {
       throw new RuntimeException(ex);
     } finally {
+      closeSlave();
       end.countDown();
       LOG.info("Close "
         + (slave.isAsync() ? "ASYNC" : "SYNC") + "#" + id + ", " + getWorkResult());
+    }
+  }
+  private void closeSlave() {
+    try {
+      slave.close();
+    } catch (IOException ex) {
+      LOG.error(ex);
     }
   }
 }
