@@ -12,6 +12,7 @@ import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Row;
 
 public class BatchSlaveAsync extends BatchSlave implements Slave {
+  private static final int MAX_BATCH_SIZE = 50;
   private final AsyncTable table;
   private final AtomicInteger count = new AtomicInteger(0);
   BatchSlaveAsync(final AsyncTable table, final Supplier<BatchType> types, int qualifierNumber) {
@@ -26,6 +27,7 @@ public class BatchSlaveAsync extends BatchSlave implements Slave {
       count.incrementAndGet();
       CompletableFuture.allOf(futs.toArray(new CompletableFuture[futs.size()]))
               .whenComplete((v, e) -> count.decrementAndGet());
+      waitForRunner(MAX_BATCH_SIZE);
     } finally {
       rows.clear();
     }
@@ -51,10 +53,11 @@ public class BatchSlaveAsync extends BatchSlave implements Slave {
 
   @Override
   public void close() throws IOException {
-    while (true) {
-      if (count.get() == 0) {
-        return;
-      }
+    waitForRunner(0);
+  }
+
+  private void waitForRunner(int expectedSize) throws IOException {
+    while (count.get() > expectedSize) {
       try {
         TimeUnit.MICROSECONDS.sleep(100);
       } catch (InterruptedException ex) {

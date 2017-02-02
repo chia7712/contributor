@@ -4,11 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
-import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.Increment;
-import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.util.Bytes;
 
@@ -28,27 +25,10 @@ public abstract class BatchSlave {
     Row row = null;
     switch (types.get()) {
       case PUT:
-        Put put = new Put(RowIndexer.createRow(rowIndex));
-        put.setDurability(durability);
-        byte[] value = Bytes.toBytes(rowIndex);
-        for (byte[] cf : cfs) {
-          for (int i = 0; i != qualifierNumber; ++i) {
-            put.addImmutable(cf, Bytes.toBytes(RowIndexer.getRandomData().getLong()), value);
-            ++cellCount;
-          }
-        }
-        row = put;
+        row = RowIndexer.createRandomPut(rowIndex, durability, cfs, qualifierNumber);
         break;
       case DELETE:
-        Delete delete = new Delete(RowIndexer.createRow(rowIndex));
-        delete.setDurability(durability);
-        for (byte[] cf : cfs) {
-          for (int i = 0; i != qualifierNumber; ++i) {
-            delete.addColumn(cf, Bytes.toBytes(RowIndexer.getRandomData().getLong()));
-            ++cellCount;
-          }
-        }
-        row = delete;
+        row = RowIndexer.createRandomDelete(rowIndex, durability, cfs, qualifierNumber);
         break;
       case GET:
         Get get = new Get(RowIndexer.createRow(rowIndex));
@@ -61,15 +41,7 @@ public abstract class BatchSlave {
         row = get;
         break;
       case INCREMENT:
-        Increment inc = new Increment(RowIndexer.createRow(rowIndex));
-        inc.setDurability(durability);
-        for (byte[] cf : cfs) {
-          for (int i = 0; i != qualifierNumber; ++i) {
-            inc.addColumn(cf, Bytes.toBytes(RowIndexer.getRandomData().getLong()), rowIndex);
-            ++cellCount;
-          }
-        }
-        row = inc;
+        row = RowIndexer.createRandomIncrement(rowIndex, durability, cfs, qualifierNumber);
         break;
       default:
         throw new RuntimeException("Why error?");

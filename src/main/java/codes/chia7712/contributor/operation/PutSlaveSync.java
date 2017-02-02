@@ -1,14 +1,17 @@
 package codes.chia7712.contributor.operation;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.hadoop.hbase.client.Durability;
+import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Table;
 
-public class PutSlaveSync extends PutSlave implements Slave {
+public class PutSlaveSync extends BatchSlave implements Slave {
   private final Table table;
   public PutSlaveSync(Table table, final int qualifierNumber) {
-    super(qualifierNumber);
+    super(() -> BatchType.PUT, qualifierNumber);
     this.table = table;
   }
 
@@ -20,9 +23,10 @@ public class PutSlaveSync extends PutSlave implements Slave {
   @Override
   public void complete() throws IOException, InterruptedException {
     try {
+      List<Put> puts = rows.stream().map(v -> (Put)v).collect(Collectors.toList());
       table.put(puts);
     } finally {
-      puts.clear();
+      rows.clear();
       table.close();
     }
   }
