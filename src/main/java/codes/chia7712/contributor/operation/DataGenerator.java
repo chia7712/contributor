@@ -3,19 +3,21 @@ package codes.chia7712.contributor.operation;
 import codes.chia7712.contributor.schedule.Dispatcher;
 import codes.chia7712.contributor.schedule.DispatcherFactory;
 import codes.chia7712.contributor.view.Arguments;
-import codes.chia7712.contributor.view.Progress;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -23,11 +25,9 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.AsyncConnection;
-import org.apache.hadoop.hbase.client.AsyncTable;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Durability;
-import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 
@@ -40,42 +40,113 @@ public class DataGenerator {
             Arrays.asList(
                     "threads",
                     "table",
-                    "rows",
-                    "op"),
-            Arrays.asList("async", "durability", "batch_size", "qualifier_number"),
-            Arrays.asList(getDescription("op", Operation.values()),
-                    getDescription("durability", Durability.values()))
+                    "rows"),
+            Arrays.asList(ProcessMode.class.getSimpleName(),
+                    RequestMode.class.getSimpleName(),
+                    DataType.class.getSimpleName(),
+                    Durability.class.getSimpleName(),
+                    "batchSize",
+                    "qualCount"),
+            Arrays.asList(
+                    getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
+                    getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
+                    getDescription(DataType.class.getSimpleName(), DataType.values()),
+                    getDescription(Durability.class.getSimpleName(), Durability.values()))
     );
     arguments.validate(args);
     final int threads = arguments.getInt("threads");
     final TableName tableName = TableName.valueOf(arguments.get("table"));
-    final Set<byte[]> cfs = findColumn(tableName);
     final int totalRows = arguments.getInt("rows");
-    final Operation op = Operation.valueOf(arguments.get("op").toUpperCase());
-    final Durability durability = Durability.valueOf(arguments.get("durability", Durability.USE_DEFAULT.name()).toUpperCase());
-    final int batchSize = arguments.getInt("batch_size", 100);
-    final int qualifierNumber = arguments.getInt("qualifier_number", 1);
-    final boolean async = arguments.getBoolean("async", false);
-    try (ConnectionWrap conn = new ConnectionWrap(async)) {
-      ExecutorService service = Executors.newFixedThreadPool(threads, Threads.newDaemonThreadFactory("-" + op.name()));
-      List<Worker> workers = new ArrayList<>(threads);
-      Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
-      LOG.info("Generator " + threads + " threads");
+    final Optional<ProcessMode> processMode = ProcessMode.find(arguments.get(ProcessMode.class.getSimpleName()));
+    final Optional<RequestMode> requestMode = RequestMode.find(arguments.get(RequestMode.class.getSimpleName()));
+    final Optional<DataType> dataType = DataType.find(arguments.get(DataType.class.getSimpleName()));
+    final Durability durability = arguments.get(Durability.class, Durability.USE_DEFAULT);
+    final int batchSize = arguments.getInt("batchSize", 100);
+    final int qualCount = arguments.getInt("qualCount", 1);
+    final Set<byte[]> families = findColumn(tableName);
+    ExecutorService service = Executors.newFixedThreadPool(threads,
+            Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
+    Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
+    DataStatistic statistic = new DataStatistic();
+    try (ConnectionWrap conn = new ConnectionWrap(processMode, requestMode)) {
+      List<CompletableFuture> slaves = new ArrayList<>(threads);
       for (int i = 0; i != threads; ++i) {
-        if (async) {
-          workers.add(new Worker(cfs, durability,
-            dispatcher, Operation.newSlaveAsync(op, conn.getAsyncTable(tableName), qualifierNumber)));
-        } else {
-          workers.add(new Worker(cfs, durability,
-            dispatcher, Operation.newSlaveSync(op, conn.getTable(tableName), qualifierNumber)));
+        Slave slave = conn.createSlave(tableName, statistic, batchSize);
+        LOG.info("#" + i + " " + slave);
+        CompletableFuture fut = CompletableFuture.runAsync(() -> {
+          Optional<Dispatcher.Packet> packet;
+          RowWork.Builder builder = RowWork.newBuilder()
+                  .setDurability(durability)
+                  .setFamilies(families)
+                  .setQualifierCount(qualCount);
+          try {
+            while ((packet = dispatcher.getPacket()).isPresent()) {
+              while (packet.get().hasNext()) {
+                long next = packet.get().next();
+                slave.updateRow(builder
+                        .setBatchType(getDataType(dataType))
+                        .setRowIndex(next)
+                        .build());
+              }
+              packet.get().commit();
+            }
+          } catch (IOException | InterruptedException ex) {
+            LOG.error(ex);
+          } finally {
+            try {
+              slave.close();
+            } catch (Exception ex) {
+              LOG.error(ex);
+            }
+          }
+
+        }, service);
+        slaves.add(fut);
+      }
+      AtomicBoolean stop = new AtomicBoolean(false);
+      CompletableFuture logger = CompletableFuture.runAsync(() -> {
+        final long startTime = System.currentTimeMillis();
+        try {
+          while (!stop.get()) {
+            log(statistic, totalRows, startTime);
+            TimeUnit.SECONDS.sleep(2);
+          }
+        } catch (InterruptedException ex) {
+          LOG.error(ex);
+        } finally {
+          log(statistic, totalRows, startTime);
         }
-      }
-      try (Progress progress = new Progress(dispatcher::getCommittedRows, totalRows)) {
-        LOG.info("submit " + threads + " threads");
-        workers.forEach(service::execute);
-        service.shutdown();
-        service.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
-      }
+      });
+      slaves.forEach(CompletableFuture::join);
+      stop.set(true);
+      logger.join();
+      LOG.info("threads:" + threads
+        + ", tableName:" + tableName
+        + ", totalRows:" + totalRows
+        + ", " + ProcessMode.class.getSimpleName() + ":" + processMode
+        + ", " + RequestMode.class.getSimpleName() + ":" + requestMode
+        + ", " + DataType.class.getSimpleName() + ":" + dataType
+        + ", " + Durability.class.getSimpleName() + ":" + durability
+        + ", batchSize:" + batchSize
+        + ", qualCount:" + qualCount);
+    }
+  }
+
+  private static void log(DataStatistic statistic, int totalRows, long startTime) {
+    long elapsed = System.currentTimeMillis() - startTime;
+    LOG.info("------------------------");
+    LOG.info("total rows:" + totalRows);
+    LOG.info("elapsed(ms):" + elapsed);
+    LOG.info("commit:" + statistic.getCommittedRows());
+    LOG.info("processing:" + statistic.getProcessingRows());
+    statistic.consume((r, i) -> LOG.info(r.toString() + ":" + i));
+  }
+  private static DataType getDataType(Optional<DataType> type) {
+    if (type.isPresent()) {
+      return type.get();
+    } else {
+      int index = (int) (Math.random() * DataType.values().length);
+      return DataType.values()[index];
     }
   }
 
@@ -103,37 +174,91 @@ public class DataGenerator {
 
   private static class ConnectionWrap implements Closeable {
 
-    private final boolean async;
-    private final Closeable object;
+    private final ProcessMode processMode;
+    private final RequestMode requestMode;
+    private final AsyncConnection asyncConn;
+    private final Connection conn;
 
-    ConnectionWrap(boolean async) throws IOException {
-      this.async = async;
-      if (async) {
-        object = ConnectionFactory.createAsyncConnection();
+    ConnectionWrap(Optional<ProcessMode> processMode,
+            Optional<RequestMode> requestMode) throws IOException {
+      this.processMode = processMode.orElse(null);
+      this.requestMode = requestMode.orElse(null);
+      if (processMode.isPresent()) {
+        switch (processMode.get()) {
+          case SYNC:
+            asyncConn = null;
+            conn = ConnectionFactory.createConnection();
+            break;
+          case ASYNC:
+            conn = null;
+            asyncConn = ConnectionFactory.createAsyncConnection();
+            break;
+          default:
+            throw new IllegalArgumentException("Unknown type:" + processMode.get());
+        }
       } else {
-        object = ConnectionFactory.createConnection();
+        asyncConn = ConnectionFactory.createAsyncConnection();
+        conn = ConnectionFactory.createConnection();
       }
     }
 
-    Table getTable(TableName name) throws IOException {
-      if (!async) {
-        return ((Connection) object).getTable(name);
+    private ProcessMode getProcessMode() {
+      if (processMode != null) {
+        return processMode;
+      } else {
+        int index = (int) (Math.random() * ProcessMode.values().length);
+        return ProcessMode.values()[index];
       }
-      throw new RuntimeException("Sync connection, not async connection");
     }
 
-    AsyncTable getAsyncTable(TableName name) throws IOException {
-      if (async) {
-        return ((AsyncConnection) object).getTable(name, ForkJoinPool.commonPool());
+    private RequestMode getRequestMode() {
+      if (requestMode != null) {
+        return requestMode;
+      } else {
+        int index = (int) (Math.random() * RequestMode.values().length);
+        return RequestMode.values()[index];
       }
-      throw new RuntimeException("Async connection, not sync connection");
+    }
+
+    Slave createSlave(final TableName tableName, final DataStatistic statistic, final int batchSize) throws IOException {
+      ProcessMode p = getProcessMode();
+      RequestMode r = getRequestMode();
+      switch (p) {
+        case SYNC:
+          switch (r) {
+            case BATCH:
+              return new BatchSlaveSync(conn.getTable(tableName), statistic, batchSize);
+            case NORMAL:
+              return new NormalSlaveSync(conn.getTable(tableName), statistic, batchSize);
+          }
+          break;
+        case ASYNC:
+          switch (r) {
+            case BATCH:
+              return new BatchSlaveAsync(asyncConn.getTable(tableName, ForkJoinPool.commonPool()), statistic, batchSize);
+            case NORMAL:
+              return new NormalSlaveAsync(asyncConn.getTable(tableName, ForkJoinPool.commonPool()), statistic, batchSize);
+          }
+          break;
+      }
+      throw new RuntimeException("Failed to find the suitable slave. ProcessMode:" + p + ", RequestMode:" + r);
     }
 
     @Override
     public void close() throws IOException {
-      object.close();
+      safeClose(conn);
+      safeClose(asyncConn);
     }
 
+    private static void safeClose(Closeable obj) {
+      if (obj != null) {
+        try {
+          obj.close();
+        } catch (IOException ex) {
+          LOG.error(ex);
+        }
+      }
+    }
   }
 
 }

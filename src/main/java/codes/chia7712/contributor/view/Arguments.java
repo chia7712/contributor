@@ -24,31 +24,44 @@ public class Arguments {
 
   public Arguments(final List<String> keys, final List<String> options, final List<String> otherMsg) {
     this.keys = new ArrayList<>(keys.size());
-    keys.forEach(v -> this.keys.add(v.toLowerCase()));
+    keys.forEach(v -> this.keys.add(format(v)));
     this.options = new ArrayList<>(options.size());
-    options.forEach(v -> this.options.add(v.toLowerCase()));
+    options.forEach(v -> this.options.add(format(v)));
     this.otherMsg = new ArrayList<>(otherMsg.size());
     this.otherMsg.addAll(otherMsg);
   }
 
   public String get(final String key, final String defaultValue) {
-    return input.getOrDefault(key, defaultValue);
+    return input.getOrDefault(format(key), defaultValue);
+  }
+
+  public <T extends Enum> T get(final Class<T> key, T defaultValue) {
+    String v = getValue(key.getClass().getSimpleName());
+    if (v == null) {
+      return defaultValue;
+    } else {
+      try {
+        return (T) key.getMethod("valueOf", String.class).invoke(null, v);
+      } catch (Exception ex) {
+        throw new RuntimeException(ex);
+      } 
+    }
   }
 
   public String get(final String key) {
-    return input.get(key);
+    return getValue(key);
   }
 
   public int getInt(final String key) {
-    return Integer.valueOf(input.get(key));
+    return Integer.valueOf(getValue(key));
   }
 
   public long getLong(final String key) {
-    return Long.valueOf(input.get(key));
+    return Long.valueOf(getValue(key));
   }
 
   public int getInt(final String key, final int defaultValue) {
-    String value = input.get(key);
+    String value = getValue(key);
     if (value != null) {
       return Integer.valueOf(value);
     } else {
@@ -56,7 +69,7 @@ public class Arguments {
     }
   }
   public boolean getBoolean(final String key, final boolean defaultValue) {
-    String value = input.get(key);
+    String value = getValue(key);
     if (value != null) {
       return Boolean.valueOf(value);
     } else {
@@ -64,12 +77,16 @@ public class Arguments {
     }
   }
   public long getLong(final String key, final long defaultValue) {
-    String value = input.get(key);
+    String value = getValue(key);
     if (value != null) {
       return Long.valueOf(value);
     } else {
       return defaultValue;
     }
+  }
+
+  private String getValue(String key) {
+    return input.get(format(key));
   }
 
   public void validate(final String[] args) {
@@ -78,7 +95,7 @@ public class Arguments {
       if (splits.length != 2) {
         throw new IllegalArgumentException("The \"" + arg + "\" is invalid");
       }
-      input.put(splits[0].toLowerCase(), splits[1]);
+      input.put(format(splits[0]), splits[1]);
     }
     List<String> missedKeys = keys.stream().filter(v -> !input.containsKey(v)).collect(Collectors.toList());
     if (!missedKeys.isEmpty()) {
@@ -86,6 +103,9 @@ public class Arguments {
     }
   }
 
+  private static String format(String s) {
+    return s.toLowerCase();
+  }
   private String generateErrorMsg(List<String> missedKeys) {
     StringBuilder builder = new StringBuilder("These arguments is required: ");
     missedKeys.forEach(v -> builder.append("<").append(v).append("> "));

@@ -1,16 +1,19 @@
 package codes.chia7712.contributor.operation;
 
 import java.io.IOException;
-import java.util.Set;
-import java.util.function.Supplier;
-import org.apache.hadoop.hbase.client.Durability;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.Table;
 
-public class BatchSlaveSync extends BatchSlave implements Slave {
+public class BatchSlaveSync extends BatchSlave {
+  private final List<Row> rows;
   private final Table table;
   private Object[] objs = null;
-  BatchSlaveSync(final Table table, final Supplier<BatchType> types, int qualifierNumber) {
-    super(types, qualifierNumber);
+
+  BatchSlaveSync(final Table table, final DataStatistic statistic, final int batchSize) {
+    super(statistic, batchSize);
+    this.rows = new ArrayList<>(batchSize);
     this.table = table;
   }
 
@@ -22,35 +25,36 @@ public class BatchSlaveSync extends BatchSlave implements Slave {
   }
 
   @Override
-  public void complete() throws IOException, InterruptedException {
+  public void updateRow(RowWork work) throws IOException, InterruptedException {
+    rows.add(prepareRow(work));
+    if (needFlush()) {
+      flush();
+    }
+  }
+
+  private void flush() throws IOException, InterruptedException {
     try {
       table.batch(rows, getObjects());
     } finally {
+      finishRows(rows);
       rows.clear();
       table.close();
     }
   }
 
   @Override
-  public void work(long rowIndex, Set<byte[]> cfs, Durability durability) throws IOException {
-    prepareData(rowIndex, cfs, durability);
-  }
-  @Override
-  public long getCellCount() {
-    return super.getCellCount();
-  }
-
-  @Override
-  public long getRowCount() {
-    return super.getRowCount();
-  }
-  @Override
-  public boolean isAsync() {
-    return false;
-  }
-
-  @Override
-  public void close() throws IOException {
+  public void close() throws IOException, InterruptedException {
+    flush();
     table.close();
+  }
+
+  @Override
+  public ProcessMode getProcessMode() {
+    return ProcessMode.SYNC;
+  }
+
+  @Override
+  public RequestMode getRequestMode() {
+    return RequestMode.BATCH;
   }
 }

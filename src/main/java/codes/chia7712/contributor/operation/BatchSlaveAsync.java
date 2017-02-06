@@ -1,68 +1,54 @@
 package codes.chia7712.contributor.operation;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 import org.apache.hadoop.hbase.client.AsyncTable;
-import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Row;
 
-public class BatchSlaveAsync extends BatchSlave implements Slave {
-  private static final int MAX_BATCH_SIZE = 50;
+public class BatchSlaveAsync extends BatchSlave {
+
   private final AsyncTable table;
-  private final AtomicInteger count = new AtomicInteger(0);
-  BatchSlaveAsync(final AsyncTable table, final Supplier<BatchType> types, int qualifierNumber) {
-    super(types, qualifierNumber);
+  private final List<Row> rows;
+
+  BatchSlaveAsync(final AsyncTable table, final DataStatistic statistic, final int batchSize) {
+    super(statistic, batchSize);
+    this.rows = new ArrayList<>(batchSize);
     this.table = table;
   }
 
   @Override
-  public void complete() throws IOException, InterruptedException {
+  public void updateRow(RowWork work) throws IOException, InterruptedException {
+    rows.add(prepareRow(work));
+    if (needFlush()) {
+      flush();
+    }
+  }
+
+  private void flush() throws IOException, InterruptedException {
     try {
       List<CompletableFuture<Row>> futs = table.batch(rows);
-      count.incrementAndGet();
-      CompletableFuture.allOf(futs.toArray(new CompletableFuture[futs.size()]))
-              .whenComplete((v, e) -> count.decrementAndGet());
-      waitForRunner(MAX_BATCH_SIZE);
+      futs.forEach(CompletableFuture::join);
     } finally {
+      finishRows(rows);
       rows.clear();
     }
   }
 
+
   @Override
-  public void work(long rowIndex, Set<byte[]> cfs, Durability durability) throws IOException {
-    prepareData(rowIndex, cfs, durability);
-  }
-  @Override
-  public long getCellCount() {
-    return super.getCellCount();
+  public void close() throws IOException, InterruptedException {
+    flush();
   }
 
   @Override
-  public long getRowCount() {
-    return super.getRowCount();
-  }
-  @Override
-  public boolean isAsync() {
-    return true;
+  public ProcessMode getProcessMode() {
+    return ProcessMode.ASYNC;
   }
 
   @Override
-  public void close() throws IOException {
-    waitForRunner(0);
-  }
-
-  private void waitForRunner(int expectedSize) throws IOException {
-    while (count.get() > expectedSize) {
-      try {
-        TimeUnit.MICROSECONDS.sleep(100);
-      } catch (InterruptedException ex) {
-        throw new IOException(ex);
-      }
-    }
+  public RequestMode getRequestMode() {
+    return RequestMode.BATCH;
   }
 }
