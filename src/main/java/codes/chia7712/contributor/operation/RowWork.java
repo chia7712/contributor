@@ -13,6 +13,11 @@ public class RowWork {
     private Set<byte[]> families;
     private int qualCount;
     private Durability durability;
+    private boolean largeCell;
+    public Builder setLargeCell(boolean largeCell) {
+      this.largeCell = largeCell;
+      return this;
+    }
     public Builder setBatchType(DataType type) {
       this.type = type;
       return this;
@@ -38,7 +43,7 @@ public class RowWork {
       return this;
     }
     public RowWork build() {
-      return new RowWork(type, rowIndex, families, qualCount, durability);
+      return new RowWork(type, rowIndex, families, qualCount, durability, largeCell);
     }
     private Builder(){}
   }
@@ -47,15 +52,20 @@ public class RowWork {
   private final Set<byte[]> families;
   private final int qualCount;
   private final Durability durability;
-
-  private RowWork(DataType type, long rowIndex, Set<byte[]> families, int qualCount, Durability durability) {
+  private final boolean largeCell;
+  private RowWork(DataType type, long rowIndex, Set<byte[]> families, int qualCount,
+        Durability durability, boolean largeCell) {
     this.type = type;
     this.rowIndex = rowIndex;
     this.families = families;
     this.qualCount = qualCount;
     this.durability = durability;
+    this.largeCell = largeCell;
   }
 
+  public boolean getLargeCell() {
+    return largeCell;
+  }
   public DataType getDataType() {
     return type;
   }

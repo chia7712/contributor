@@ -46,7 +46,8 @@ public class DataGenerator {
                     DataType.class.getSimpleName(),
                     Durability.class.getSimpleName(),
                     "batchSize",
-                    "qualCount"),
+                    "qualCount",
+                    "largecell"),
             Arrays.asList(
                     getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
                     getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
@@ -64,6 +65,7 @@ public class DataGenerator {
     final int batchSize = arguments.getInt("batchSize", 100);
     final int qualCount = arguments.getInt("qualCount", 1);
     final Set<byte[]> families = findColumn(tableName);
+    final boolean largeCell = arguments.getBoolean("largecell", false);
     ExecutorService service = Executors.newFixedThreadPool(threads,
             Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
@@ -78,6 +80,7 @@ public class DataGenerator {
           RowWork.Builder builder = RowWork.newBuilder()
                   .setDurability(durability)
                   .setFamilies(families)
+                  .setLargeCell(largeCell)
                   .setQualifierCount(qualCount);
           try {
             while ((packet = dispatcher.getPacket()).isPresent()) {

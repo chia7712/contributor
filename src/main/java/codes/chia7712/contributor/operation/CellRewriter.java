@@ -9,19 +9,26 @@ public class CellRewriter {
   }
   private final Cell baseCell;
   private Cell current;
+
   private CellRewriter(final Cell baseCell) {
     this.baseCell = baseCell;
   }
 
   public CellRewriter rewrite(Field rewirtedField, byte[] rewritedArray) {
+    return rewrite(rewirtedField, rewritedArray, 0, rewritedArray.length);
+  }
+
+  public CellRewriter rewrite(Field rewirtedField, byte[] rewritedArray,
+          final int rewritedOffset, final int rewritedLength) {
     if (current == null) {
-      current = new RewriteCell(baseCell, rewirtedField, rewritedArray);
+      current = new RewriteCell(baseCell, rewirtedField, rewritedArray,
+              rewritedOffset, rewritedLength);
     } else {
-      current = new RewriteCell(current, rewirtedField, rewritedArray);
+      current = new RewriteCell(current, rewirtedField, rewritedArray,
+              rewritedOffset, rewritedLength);
     }
     return this;
   }
-
   public Cell getAndReset() {
     Cell rval = current;
     current = null;
@@ -37,12 +44,21 @@ public class CellRewriter {
     private final Field rewirtedField;
     private final Cell cell;
     private final byte[] rewritedArray;
+    private final int rewritedOffset;
+    private final int rewritedLength;
 
     public RewriteCell(Cell cell, final Field rewirtedField, byte[] rewritedArray) {
+      this(cell, rewirtedField, rewritedArray, 0, rewritedArray.length);
+    }
+
+    public RewriteCell(Cell cell, final Field rewirtedField, byte[] rewritedArray,
+            final int rewritedOffset, final int rewritedLength) {
       assert rewritedArray != null;
       this.cell = cell;
       this.rewritedArray = rewritedArray;
       this.rewirtedField = rewirtedField;
+      this.rewritedOffset = rewritedOffset;
+      this.rewritedLength = rewritedLength;
     }
 
     private byte[] getFieldArray(Field field) {
@@ -65,7 +81,7 @@ public class CellRewriter {
 
     private int getFieldOffset(Field field) {
       if (field == rewirtedField) {
-        return 0;
+        return rewritedOffset;
       }
       switch (field) {
         case ROW:
@@ -83,7 +99,7 @@ public class CellRewriter {
 
     private int getFieldLength(Field field) {
       if (field == rewirtedField) {
-        return rewritedArray.length;
+        return rewritedLength;
       }
       switch (field) {
         case ROW:
