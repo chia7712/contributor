@@ -23,6 +23,7 @@ import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.util.Bytes;
 
 public abstract class BatchSlave implements Slave {
+
   private static final RandomData RANDOM = RandomDataFactory.create();
   private static final List<String> KEYS = Arrays.asList(
           "0-",
@@ -41,13 +42,16 @@ public abstract class BatchSlave implements Slave {
   private final DataStatistic statistic;
   private final int batchSize;
   private final ConcurrentMap<DataType, Record> recordCache = new ConcurrentHashMap<>();
+
   public BatchSlave(final DataStatistic statistic, final int batchSize) {
     this.statistic = statistic;
     this.batchSize = batchSize;
   }
+
   protected boolean needFlush() {
     return getProcessingRows() >= batchSize;
   }
+
   private void addNewRows(Record record, int delta) {
     assert delta >= 0;
     statistic.addNewRows(record, delta);
@@ -63,6 +67,7 @@ public abstract class BatchSlave implements Slave {
     }
     return recordCache;
   }
+
   protected void finishRows(List<? extends Row> rows) {
     Map<DataType, Record> cache = getCache();
     processingRows.add(-rows.size());
@@ -75,8 +80,11 @@ public abstract class BatchSlave implements Slave {
       }
     }
   }
+
   protected void finishRows(DataType expectedType, int delta) {
-    assert delta >= 0;
+    if (delta <= 0) {
+      return;
+    }
     Map<DataType, Record> cache = getCache();
     processingRows.add(-delta);
     statistic.finishRows(cache.get(expectedType), delta);
@@ -93,13 +101,13 @@ public abstract class BatchSlave implements Slave {
         row = createRandomPut(work);
         break;
       case DELETE:
-        row =  createRandomDelete(work);
+        row = createRandomDelete(work);
         break;
       case GET:
-        row =  createRandomGet(work);
+        row = createRandomGet(work);
         break;
       case INCREMENT:
-        row =  createRandomIncrement(work);
+        row = createRandomIncrement(work);
         break;
       default:
         throw new RuntimeException("Unknown type:" + work.getDataType());
@@ -129,11 +137,20 @@ public abstract class BatchSlave implements Slave {
     byte[] row = createRow(randomIndex);
     SimplePut put = new SimplePut(row);
     put.setDurability(work.getDurability());
+    CellRewriter rewriter = null;
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
-        byte[] value = Bytes.toBytes(randomIndex + i);
-        Cell cell = new IndividualBytesFieldCell(row, family,
-                value, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, value);
+        Cell cell;
+        byte[] data = Bytes.toBytes(randomIndex + i);
+        if (rewriter == null) {
+          cell = new IndividualBytesFieldCell(row, family,
+                  data, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, data);
+          rewriter = CellRewriter.newCellRewriter(cell);
+        } else {
+          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, data)
+                         .rewrite(CellRewriter.Field.VALUE, data)
+                         .getAndReset();
+        }
         put.add(family, cell, work.getQualifierCount());
       }
     }
@@ -157,10 +174,19 @@ public abstract class BatchSlave implements Slave {
     byte[] row = createRow(randomIndex);
     SimpleDelete delete = new SimpleDelete(row);
     delete.setDurability(work.getDurability());
+    CellRewriter rewriter = null;
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
-        Cell cell = new IndividualBytesFieldCell(row, family,
-                Bytes.toBytes(randomIndex + i), HConstants.LATEST_TIMESTAMP, KeyValue.Type.Delete, null);
+        Cell cell;
+        byte[] data = Bytes.toBytes(randomIndex + i);
+        if (rewriter == null) {
+          cell = new IndividualBytesFieldCell(row, family,
+                data, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Delete, null);
+          rewriter = CellRewriter.newCellRewriter(cell);
+        } else {
+          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, data)
+                         .getAndReset();
+        }
         delete.add(family, cell, work.getQualifierCount());
       }
     }
@@ -172,11 +198,19 @@ public abstract class BatchSlave implements Slave {
     byte[] row = createRow(randomIndex);
     SimpleIncrement inc = new SimpleIncrement(row);
     inc.setDurability(work.getDurability());
+    CellRewriter rewriter = null;
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
-        byte[] value = Bytes.toBytes(randomIndex + i);
-        Cell cell = new IndividualBytesFieldCell(row, family,
-                value, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, value);
+        Cell cell;
+        byte[] data = Bytes.toBytes(randomIndex + i);
+        if (rewriter == null) {
+          cell = new IndividualBytesFieldCell(row, family,
+                data, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, data);
+          rewriter = CellRewriter.newCellRewriter(cell);
+        } else {
+          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, data)
+                         .getAndReset();
+        }
         inc.add(family, cell, work.getQualifierCount());
       }
     }
