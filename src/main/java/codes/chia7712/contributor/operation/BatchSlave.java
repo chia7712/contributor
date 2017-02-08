@@ -4,6 +4,7 @@ import codes.chia7712.contributor.data.RandomData;
 import codes.chia7712.contributor.data.RandomDataFactory;
 import codes.chia7712.contributor.operation.CellRewriter.Field;
 import codes.chia7712.contributor.operation.DataStatistic.Record;
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -126,14 +127,17 @@ public abstract class BatchSlave implements Slave {
     return this.getProcessMode() + "/" + this.getRequestMode();
   }
 
-  private static byte[] createRow(long rowIndex) {
+  @VisibleForTesting
+  static byte[] createRow(long rowIndex) {
     byte[] key = KEYS_BYTES.get((int) (Math.random() * KEYS_BYTES.size()));
-    byte[] buf = new byte[key.length + Long.BYTES + DELIMITER.length + Long.BYTES];
+    byte[] rowIndexBytes = Bytes.toBytes(String.valueOf(Math.abs(rowIndex)));
+    byte[] timeBytes = Bytes.toBytes(String.valueOf(System.currentTimeMillis()));
+    byte[] buf = new byte[key.length + rowIndexBytes.length + DELIMITER.length + timeBytes.length];
     int offset = 0;
     offset = Bytes.putBytes(buf, offset, key, 0, key.length);
-    offset = Bytes.putLong(buf, offset, rowIndex);
+    offset = Bytes.putBytes(buf, offset, rowIndexBytes, 0, rowIndexBytes.length);
     offset = Bytes.putBytes(buf, offset, DELIMITER, 0, DELIMITER.length);
-    offset = Bytes.putLong(buf, offset, System.currentTimeMillis());
+    offset = Bytes.putBytes(buf, offset, timeBytes, 0, timeBytes.length);
     return buf;
   }
 
