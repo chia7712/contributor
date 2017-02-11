@@ -21,4 +21,6 @@ public interface RandomData {
   String getStringWithRandomSize(int limit);
 
   String getString(int size);
+
+  byte[] getBytes(int size);
 }

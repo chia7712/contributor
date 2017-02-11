@@ -2,7 +2,6 @@ package codes.chia7712.contributor.operation;
 
 import codes.chia7712.contributor.data.RandomData;
 import codes.chia7712.contributor.data.RandomDataFactory;
-import codes.chia7712.contributor.operation.CellRewriter.Field;
 import codes.chia7712.contributor.operation.DataStatistic.Record;
 import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
@@ -26,11 +25,11 @@ import org.apache.hadoop.hbase.util.Bytes;
 
 public abstract class BatchSlave implements Slave {
 
-  private static final int MAX_VALUE_SIZE = 1024;
-  private static final int MIN_VALUE_SIZE = 100;
-  private static final byte[] RANDOM_STRING_BYTES = Bytes.toBytes(
-          RandomDataFactory.create().getString(
-          Math.max((int) (Math.random() * MAX_VALUE_SIZE), MIN_VALUE_SIZE)));
+//  private static final int MAX_VALUE_SIZE = 1024;
+//  private static final int MIN_VALUE_SIZE = 100;
+//  private static final byte[] RANDOM_STRING_BYTES = Bytes.toBytes(
+//          RandomDataFactory.create().getString(
+//          Math.max((int) (Math.random() * MAX_VALUE_SIZE), MIN_VALUE_SIZE)));
   private static final RandomData RANDOM = RandomDataFactory.create();
   private static final List<String> KEYS = Arrays.asList(
           "0-",
@@ -47,15 +46,18 @@ public abstract class BatchSlave implements Slave {
   private static final byte[] DELIMITER = Bytes.toBytes("-");
   private final LongAdder processingRows = new LongAdder();
   private final DataStatistic statistic;
-  private final int batchSize;
+  private final int batchRows;
   private final ConcurrentMap<DataType, Record> recordCache = new ConcurrentHashMap<>();
-  public BatchSlave(final DataStatistic statistic, final int batchSize) {
+  public BatchSlave(final DataStatistic statistic, final int batchRows) {
     this.statistic = statistic;
-    this.batchSize = batchSize;
+    this.batchRows = batchRows;
   }
 
+  private static boolean isNormalCell(RowWork work) {
+    return work.getCellSize()<= 0;
+  }
   protected boolean needFlush() {
-    return getProcessingRows() >= batchSize;
+    return getProcessingRows() >= batchRows;
   }
 
   private void addNewRows(Record record, int delta) {
@@ -141,12 +143,6 @@ public abstract class BatchSlave implements Slave {
     return buf;
   }
 
-  private static CellRewriter addRandomData(CellRewriter rewriter, Field rewirtedField) {
-    rewriter.rewrite(rewirtedField, RANDOM_STRING_BYTES,
-      0, (int) (Math.random() * RANDOM_STRING_BYTES.length));
-    return rewriter;
-  }
-
   private static Put createRandomPut(RowWork work) {
     long randomIndex = RANDOM.getLong();
     byte[] row = createRow(randomIndex);
@@ -156,22 +152,16 @@ public abstract class BatchSlave implements Slave {
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
         Cell cell;
-        byte[] data = Bytes.toBytes(randomIndex + i);
+        byte[] normalData = Bytes.toBytes(randomIndex + i);
         if (rewriter == null) {
           cell = new IndividualBytesFieldCell(row, family,
-                  data, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, data);
+                  normalData, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, normalData);
           rewriter = CellRewriter.newCellRewriter(cell);
         } else {
-          if (work.getLargeCell()) {
-            cell = addRandomData(addRandomData(rewriter,
-                    CellRewriter.Field.QUALIFIER),
-                    CellRewriter.Field.VALUE).getAndReset();
-          } else {
-            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, data)
-                           .rewrite(CellRewriter.Field.VALUE, data)
-                           .getAndReset();
-          }
-
+          byte[] largeData = isNormalCell(work) ? normalData : RANDOM.getBytes(work.getCellSize());
+          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, normalData)
+                         .rewrite(CellRewriter.Field.VALUE, largeData)
+                         .getAndReset();
         }
         put.add(family, cell, work.getQualifierCount());
       }
@@ -209,19 +199,15 @@ public abstract class BatchSlave implements Slave {
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
         Cell cell;
-        byte[] data = Bytes.toBytes(randomIndex + i);
+        byte[] normalData = Bytes.toBytes(randomIndex + i);
         if (rewriter == null) {
           cell = new IndividualBytesFieldCell(row, family,
-                data, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Delete, null);
+                normalData, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Delete, null);
           rewriter = CellRewriter.newCellRewriter(cell);
         } else {
-          if (work.getLargeCell()) {
-            cell = addRandomData(rewriter, CellRewriter.Field.QUALIFIER)
-                    .getAndReset();
-          } else {
-            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, data)
-                           .getAndReset();
-          }
+          byte[] largeData = isNormalCell(work) ? normalData : RANDOM.getBytes(work.getCellSize());
+          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, largeData)
+                         .getAndReset();
         }
         delete.add(family, cell, work.getQualifierCount());
       }
@@ -238,19 +224,15 @@ public abstract class BatchSlave implements Slave {
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
         Cell cell;
-        byte[] data = Bytes.toBytes(randomIndex + i);
+        byte[] normalData = Bytes.toBytes(randomIndex + i);
         if (rewriter == null) {
           cell = new IndividualBytesFieldCell(row, family,
-                data, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, data);
+                normalData, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, normalData);
           rewriter = CellRewriter.newCellRewriter(cell);
         } else {
-          if (work.getLargeCell()) {
-            cell = addRandomData(rewriter, CellRewriter.Field.QUALIFIER)
-                    .getAndReset();
-          } else {
-            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, data)
-                         .getAndReset();
-          }
+          byte[] largeData = isNormalCell(work) ? normalData : RANDOM.getBytes(work.getCellSize());
+          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, largeData)
+                       .getAndReset();
         }
         inc.add(family, cell, work.getQualifierCount());
       }
