@@ -18,6 +18,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -47,7 +49,8 @@ public class DataGenerator {
                     Durability.class.getSimpleName(),
                     "batchSize",
                     "qualCount",
-                    "cellSize"),
+                    "cellSize",
+                    "flushtable"),
             Arrays.asList(
                     getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
                     getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
@@ -66,11 +69,13 @@ public class DataGenerator {
     final int qualCount = arguments.getInt("qualCount", 1);
     final Set<byte[]> families = findColumn(tableName);
     final int cellSize = arguments.getInt("cellSize", -1);
+    final boolean needFlush = arguments.getBoolean("flushtable", true);
     ExecutorService service = Executors.newFixedThreadPool(threads,
             Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
     DataStatistic statistic = new DataStatistic();
-    try (ConnectionWrap conn = new ConnectionWrap(processMode, requestMode)) {
+    try (ConnectionWrap conn = new ConnectionWrap(processMode, requestMode,
+            needFlush ? tableName : null)) {
       List<CompletableFuture> slaves = new ArrayList<>(threads);
       for (int i = 0; i != threads; ++i) {
         Slave slave = conn.createSlave(tableName, statistic, batchSize);
@@ -181,11 +186,12 @@ public class DataGenerator {
     private final RequestMode requestMode;
     private final AsyncConnection asyncConn;
     private final Connection conn;
-
+    private final TableName nameToFlush;
     ConnectionWrap(Optional<ProcessMode> processMode,
-            Optional<RequestMode> requestMode) throws IOException {
+            Optional<RequestMode> requestMode, TableName nameToFlush) throws IOException {
       this.processMode = processMode.orElse(null);
       this.requestMode = requestMode.orElse(null);
+      this.nameToFlush = nameToFlush;
       if (processMode.isPresent()) {
         switch (processMode.get()) {
           case SYNC:
@@ -193,7 +199,7 @@ public class DataGenerator {
             conn = ConnectionFactory.createConnection();
             break;
           case ASYNC:
-            conn = null;
+            conn = nameToFlush != null ? ConnectionFactory.createConnection() : null;
             asyncConn = ConnectionFactory.createAsyncConnection();
             break;
           default:
@@ -249,10 +255,21 @@ public class DataGenerator {
 
     @Override
     public void close() throws IOException {
+      flush();
       safeClose(conn);
       safeClose(asyncConn);
     }
 
+    private void flush() {
+      if (nameToFlush == null) {
+        return;
+      }
+      try (Admin admin = conn.getAdmin()) {
+        admin.flush(nameToFlush);
+      } catch (IOException ex) {
+        LOG.error(ex);
+      }
+    }
     private static void safeClose(Closeable obj) {
       if (obj != null) {
         try {
