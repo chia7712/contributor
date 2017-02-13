@@ -15,18 +15,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
-import org.apache.hadoop.hbase.client.AsyncConnection;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Durability;
@@ -184,7 +180,6 @@ public class DataGenerator {
 
     private final ProcessMode processMode;
     private final RequestMode requestMode;
-    private final AsyncConnection asyncConn;
     private final Connection conn;
     private final TableName nameToFlush;
     ConnectionWrap(Optional<ProcessMode> processMode,
@@ -195,18 +190,12 @@ public class DataGenerator {
       if (processMode.isPresent()) {
         switch (processMode.get()) {
           case SYNC:
-            asyncConn = null;
             conn = ConnectionFactory.createConnection();
             break;
-          case ASYNC:
-            conn = nameToFlush != null ? ConnectionFactory.createConnection() : null;
-            asyncConn = ConnectionFactory.createAsyncConnection();
-            break;
           default:
-            throw new IllegalArgumentException("Unknown type:" + processMode.get());
+            conn = null;
         }
       } else {
-        asyncConn = ConnectionFactory.createAsyncConnection();
         conn = ConnectionFactory.createConnection();
       }
     }
@@ -241,14 +230,6 @@ public class DataGenerator {
               return new NormalSlaveSync(conn.getTable(tableName), statistic, batchSize);
           }
           break;
-        case ASYNC:
-          switch (r) {
-            case BATCH:
-              return new BatchSlaveAsync(asyncConn.getTable(tableName, ForkJoinPool.commonPool()), statistic, batchSize);
-            case NORMAL:
-              return new NormalSlaveAsync(asyncConn.getTable(tableName, ForkJoinPool.commonPool()), statistic, batchSize);
-          }
-          break;
       }
       throw new RuntimeException("Failed to find the suitable slave. ProcessMode:" + p + ", RequestMode:" + r);
     }
@@ -257,7 +238,6 @@ public class DataGenerator {
     public void close() throws IOException {
       flush();
       safeClose(conn);
-      safeClose(asyncConn);
     }
 
     private void flush() {
