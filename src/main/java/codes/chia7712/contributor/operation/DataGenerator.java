@@ -18,8 +18,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -36,21 +34,29 @@ import org.apache.hadoop.hbase.util.Threads;
 public class DataGenerator {
 
   private static final Log LOG = LogFactory.getLog(DataGenerator.class);
-
+  private static final String NUMBER_OF_THREAD = "threads";
+  private static final String TABLE_NAME = "table";
+  private static final String NUMBER_OF_ROW = "rows";
+  private static final String BATCH_SIZE = "batchSize";
+  private static final String NUMBER_OF_QUALIFIER = "qualCount";
+  private static final String CELL_SIZE = "cellSize";
+  private static final String FLUSH_AT_THE_END = "flushtable";
+  private static final String LARGE_QUALIFIER = "largequal";
   public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
     Arguments arguments = new Arguments(
             Arrays.asList(
-                    "threads",
-                    "table",
-                    "rows"),
+                    NUMBER_OF_THREAD,
+                    TABLE_NAME,
+                    NUMBER_OF_ROW),
             Arrays.asList(ProcessMode.class.getSimpleName(),
                     RequestMode.class.getSimpleName(),
                     DataType.class.getSimpleName(),
                     Durability.class.getSimpleName(),
-                    "batchSize",
-                    "qualCount",
-                    "cellSize",
-                    "flushtable"),
+                    BATCH_SIZE,
+                    NUMBER_OF_QUALIFIER,
+                    CELL_SIZE,
+                    FLUSH_AT_THE_END,
+                    LARGE_QUALIFIER),
             Arrays.asList(
                     getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
                     getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
@@ -58,18 +64,19 @@ public class DataGenerator {
                     getDescription(Durability.class.getSimpleName(), Durability.values()))
     );
     arguments.validate(args);
-    final int threads = arguments.getInt("threads");
-    final TableName tableName = TableName.valueOf(arguments.get("table"));
-    final int totalRows = arguments.getInt("rows");
+    final int threads = arguments.getInt(NUMBER_OF_THREAD);
+    final TableName tableName = TableName.valueOf(arguments.get(TABLE_NAME));
+    final int totalRows = arguments.getInt(NUMBER_OF_ROW);
     final Optional<ProcessMode> processMode = ProcessMode.find(arguments.get(ProcessMode.class.getSimpleName()));
     final Optional<RequestMode> requestMode = RequestMode.find(arguments.get(RequestMode.class.getSimpleName()));
     final Optional<DataType> dataType = DataType.find(arguments.get(DataType.class.getSimpleName()));
     final Durability durability = arguments.get(Durability.class, Durability.USE_DEFAULT);
-    final int batchSize = arguments.getInt("batchSize", 100);
-    final int qualCount = arguments.getInt("qualCount", 1);
+    final int batchSize = arguments.getInt(BATCH_SIZE, 100);
+    final int qualCount = arguments.getInt(NUMBER_OF_QUALIFIER, 1);
     final Set<byte[]> families = findColumn(tableName);
-    final int cellSize = arguments.getInt("cellSize", -1);
-    final boolean needFlush = arguments.getBoolean("flushtable", true);
+    final int cellSize = arguments.getInt(CELL_SIZE, -1);
+    final boolean needFlush = arguments.getBoolean(FLUSH_AT_THE_END, true);
+    final boolean largeQual = arguments.getBoolean(LARGE_QUALIFIER, false);
     ExecutorService service = Executors.newFixedThreadPool(threads,
             Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
@@ -86,7 +93,8 @@ public class DataGenerator {
                   .setDurability(durability)
                   .setFamilies(families)
                   .setCellSize(cellSize)
-                  .setQualifierCount(qualCount);
+                  .setQualifierCount(qualCount)
+                  .setLargeQualifier(largeQual);
           try {
             while ((packet = dispatcher.getPacket()).isPresent()) {
               while (packet.get().hasNext()) {

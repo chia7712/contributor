@@ -159,9 +159,16 @@ public abstract class BatchSlave implements Slave {
           rewriter = CellRewriter.newCellRewriter(cell);
         } else {
           byte[] largeData = isNormalCell(work) ? normalData : RANDOM.getBytes(work.getCellSize());
-          cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, normalData)
-                         .rewrite(CellRewriter.Field.VALUE, largeData)
-                         .getAndReset();
+          if (work.getLargeQualifier()) {
+            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, largeData)
+                           .rewrite(CellRewriter.Field.VALUE, normalData)
+                           .getAndReset();
+          } else {
+            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, normalData)
+                           .rewrite(CellRewriter.Field.VALUE, largeData)
+                           .getAndReset();
+          }
+
         }
         put.add(family, cell, work.getQualifierCount());
       }
