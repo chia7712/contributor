@@ -8,8 +8,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -18,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -42,6 +45,7 @@ public class DataGenerator {
   private static final String CELL_SIZE = "cellSize";
   private static final String FLUSH_AT_THE_END = "flushtable";
   private static final String LARGE_QUALIFIER = "largequal";
+
   public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
     Arguments arguments = new Arguments(
             Arrays.asList(
@@ -84,9 +88,12 @@ public class DataGenerator {
     try (ConnectionWrap conn = new ConnectionWrap(processMode, requestMode,
             needFlush ? tableName : null)) {
       List<CompletableFuture> slaves = new ArrayList<>(threads);
+      Map<SlaveCatalog, AtomicInteger> slaveCatalog = new TreeMap<>();
       for (int i = 0; i != threads; ++i) {
         Slave slave = conn.createSlave(tableName, statistic, batchSize);
-        LOG.info("#" + i + " " + slave);
+        LOG.info("Starting #" + i + " " + slave);
+        slaveCatalog.computeIfAbsent(new SlaveCatalog(slave), k -> new AtomicInteger(0))
+                .incrementAndGet();
         CompletableFuture fut = CompletableFuture.runAsync(() -> {
           Optional<Dispatcher.Packet> packet;
           RowWork.Builder builder = RowWork.newBuilder()
@@ -137,14 +144,44 @@ public class DataGenerator {
       stop.set(true);
       logger.join();
       LOG.info("threads:" + threads
-        + ", tableName:" + tableName
-        + ", totalRows:" + totalRows
-        + ", " + ProcessMode.class.getSimpleName() + ":" + processMode
-        + ", " + RequestMode.class.getSimpleName() + ":" + requestMode
-        + ", " + DataType.class.getSimpleName() + ":" + dataType
-        + ", " + Durability.class.getSimpleName() + ":" + durability
-        + ", batchSize:" + batchSize
-        + ", qualCount:" + qualCount);
+              + ", tableName:" + tableName
+              + ", totalRows:" + totalRows
+              + ", " + ProcessMode.class.getSimpleName() + ":" + processMode
+              + ", " + RequestMode.class.getSimpleName() + ":" + requestMode
+              + ", " + DataType.class.getSimpleName() + ":" + dataType
+              + ", " + Durability.class.getSimpleName() + ":" + durability
+              + ", batchSize:" + batchSize
+              + ", qualCount:" + qualCount);
+      slaveCatalog.forEach((k, v) -> LOG.info(k + " " + v));
+    }
+  }
+
+  private static class SlaveCatalog implements Comparable<SlaveCatalog> {
+
+    private final ProcessMode processMode;
+    private final RequestMode requestMode;
+
+    SlaveCatalog(Slave slave) {
+      this(slave.getProcessMode(), slave.getRequestMode());
+    }
+
+    SlaveCatalog(final ProcessMode processMode, RequestMode requestMode) {
+      this.processMode = processMode;
+      this.requestMode = requestMode;
+    }
+
+    @Override
+    public int compareTo(SlaveCatalog o) {
+      int rval = processMode.compareTo(o.processMode);
+      if (rval != 0) {
+        return rval;
+      }
+      return requestMode.compareTo(o.requestMode);
+    }
+
+    @Override
+    public String toString() {
+      return processMode + "/" + requestMode;
     }
   }
 
@@ -157,6 +194,7 @@ public class DataGenerator {
     LOG.info("processing:" + statistic.getProcessingRows());
     statistic.consume((r, i) -> LOG.info(r.toString() + ":" + i));
   }
+
   private static DataType getDataType(Optional<DataType> type) {
     if (type.isPresent()) {
       return type.get();
@@ -195,6 +233,7 @@ public class DataGenerator {
     private final AsyncConnection asyncConn;
     private final Connection conn;
     private final TableName nameToFlush;
+
     ConnectionWrap(Optional<ProcessMode> processMode,
             Optional<RequestMode> requestMode, TableName nameToFlush) throws IOException {
       this.processMode = processMode.orElse(null);
@@ -278,6 +317,7 @@ public class DataGenerator {
         LOG.error(ex);
       }
     }
+
     private static void safeClose(Closeable obj) {
       if (obj != null) {
         try {
