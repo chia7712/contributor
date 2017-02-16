@@ -57,7 +57,10 @@ public class NormalSlaveSync extends BatchSlave {
     }
   }
 
-  private void innerFlush(List data, TableAction f, DataType type) throws IOException, InterruptedException {
+  private void innerFlush(List<?> data, TableAction f, DataType type) throws IOException, InterruptedException {
+    if (data.isEmpty()) {
+      return;
+    }
     try {
       int size = data.size();
       f.run(table);
