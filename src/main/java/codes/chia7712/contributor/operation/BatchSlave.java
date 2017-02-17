@@ -149,6 +149,7 @@ public abstract class BatchSlave implements Slave {
     SimplePut put = new SimplePut(row);
     put.setDurability(work.getDurability());
     CellRewriter rewriter = null;
+    byte[] largeData = isNormalCell(work) ? null : RANDOM.getBytes(work.getCellSize());
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
         Cell cell;
@@ -158,14 +159,14 @@ public abstract class BatchSlave implements Slave {
                   normalData, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, normalData);
           rewriter = CellRewriter.newCellRewriter(cell);
         } else {
-          byte[] largeData = isNormalCell(work) ? normalData : RANDOM.getBytes(work.getCellSize());
+          byte[] value = largeData == null ? normalData : largeData;
           if (work.getLargeQualifier()) {
-            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, largeData)
+            cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, value)
                            .rewrite(CellRewriter.Field.VALUE, normalData)
                            .getAndReset();
           } else {
             cell = rewriter.rewrite(CellRewriter.Field.QUALIFIER, normalData)
-                           .rewrite(CellRewriter.Field.VALUE, largeData)
+                           .rewrite(CellRewriter.Field.VALUE, value)
                            .getAndReset();
           }
 

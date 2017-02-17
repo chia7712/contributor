@@ -60,11 +60,10 @@ public class RandomDataFactory {
     }
 
     @Override
-    public byte[] getBytes(int size) {
-      assert size >= 0;
-      byte[] buf = new byte[size];
-      Arrays.fill(buf, (byte) 0x01);
-      return buf;
+    public byte[] getBytes(int length) {
+      byte[] b = new byte[length];
+      rn.nextBytes(b);
+      return b;
     }
 
     @Override
