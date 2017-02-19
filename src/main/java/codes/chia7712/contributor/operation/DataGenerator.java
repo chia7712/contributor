@@ -45,6 +45,7 @@ public class DataGenerator {
   private static final String CELL_SIZE = "cellSize";
   private static final String FLUSH_AT_THE_END = "flushtable";
   private static final String LARGE_QUALIFIER = "largequal";
+  private static final String LOG_INTERVAL = "logInterval";
 
   public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
     Arguments arguments = new Arguments(
@@ -60,7 +61,8 @@ public class DataGenerator {
                     NUMBER_OF_QUALIFIER,
                     CELL_SIZE,
                     FLUSH_AT_THE_END,
-                    LARGE_QUALIFIER),
+                    LARGE_QUALIFIER,
+                    LOG_INTERVAL),
             Arrays.asList(
                     getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
                     getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
@@ -70,7 +72,7 @@ public class DataGenerator {
     arguments.validate(args);
     final int threads = arguments.getInt(NUMBER_OF_THREAD);
     final TableName tableName = TableName.valueOf(arguments.get(TABLE_NAME));
-    final int totalRows = arguments.getInt(NUMBER_OF_ROW);
+    final long totalRows = arguments.getLong(NUMBER_OF_ROW);
     final Optional<ProcessMode> processMode = ProcessMode.find(arguments.get(ProcessMode.class.getSimpleName()));
     final Optional<RequestMode> requestMode = RequestMode.find(arguments.get(RequestMode.class.getSimpleName()));
     final Optional<DataType> dataType = DataType.find(arguments.get(DataType.class.getSimpleName()));
@@ -81,6 +83,7 @@ public class DataGenerator {
     final int cellSize = arguments.getInt(CELL_SIZE, -1);
     final boolean needFlush = arguments.getBoolean(FLUSH_AT_THE_END, true);
     final boolean largeQual = arguments.getBoolean(LARGE_QUALIFIER, false);
+    final int logInterval = arguments.getInt(LOG_INTERVAL, 5);
     ExecutorService service = Executors.newFixedThreadPool(threads,
             Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
@@ -132,7 +135,7 @@ public class DataGenerator {
         try {
           while (!stop.get()) {
             log(statistic, totalRows, startTime);
-            TimeUnit.SECONDS.sleep(2);
+            TimeUnit.SECONDS.sleep(logInterval);
           }
         } catch (InterruptedException ex) {
           LOG.error(ex);
@@ -185,13 +188,23 @@ public class DataGenerator {
     }
   }
 
-  private static void log(DataStatistic statistic, int totalRows, long startTime) {
-    long elapsed = System.currentTimeMillis() - startTime;
+  private static void log(DataStatistic statistic, long totalRows, long startTime) {
+    long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+    long committedRows = statistic.getCommittedRows();
+    if (elapsed <= 0 || committedRows <=0) {
+      return;
+    }
+    long throughput = committedRows / elapsed;
+    if (throughput <= 0) {
+      return;
+    }
     LOG.info("------------------------");
     LOG.info("total rows:" + totalRows);
-    LOG.info("elapsed(ms):" + elapsed);
-    LOG.info("commit:" + statistic.getCommittedRows());
-    LOG.info("processing:" + statistic.getProcessingRows());
+    LOG.info("throughput(rows/s):" + throughput);
+    LOG.info("remaining(s):" + (totalRows - committedRows) / throughput);
+    LOG.info("elapsed(s):" + elapsed);
+    LOG.info("committed(rows):" + committedRows);
+    LOG.info("processing(rows):" + statistic.getProcessingRows());
     statistic.consume((r, i) -> LOG.info(r.toString() + ":" + i));
   }
 
