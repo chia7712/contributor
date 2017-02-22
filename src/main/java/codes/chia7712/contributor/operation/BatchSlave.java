@@ -249,9 +249,17 @@ public abstract class BatchSlave implements Slave {
   }
 
   private static class SimplePut extends Put {
-
+    private Long heapSize;
     private SimplePut(byte[] row) {
       super(row);
+    }
+
+    @Override
+    public long heapSize() {
+      if (heapSize == null) {
+        heapSize = super.heapSize();
+      }
+      return heapSize;
     }
 
     private SimplePut add(byte[] family, Cell cell, int expectedSize) {
@@ -266,7 +274,7 @@ public abstract class BatchSlave implements Slave {
   }
 
   private static class SimpleDelete extends Delete {
-
+    
     private SimpleDelete(byte[] row) {
       super(row);
     }
