@@ -260,13 +260,13 @@ public class DataGenerator {
             break;
           case ASYNC:
             conn = nameToFlush != null ? ConnectionFactory.createConnection() : null;
-            asyncConn = ConnectionFactory.createAsyncConnection();
+            asyncConn = ConnectionFactory.createAsyncConnection().join();
             break;
           default:
             throw new IllegalArgumentException("Unknown type:" + processMode.get());
         }
       } else {
-        asyncConn = ConnectionFactory.createAsyncConnection();
+        asyncConn = ConnectionFactory.createAsyncConnection().join();
         conn = ConnectionFactory.createConnection();
       }
     }
