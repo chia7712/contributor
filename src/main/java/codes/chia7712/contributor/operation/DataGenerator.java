@@ -28,9 +28,12 @@ import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.AsyncConnection;
+import org.apache.hadoop.hbase.client.AsyncTable;
+import org.apache.hadoop.hbase.client.BufferedMutator;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Durability;
+import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 
@@ -191,7 +194,7 @@ public class DataGenerator {
   private static void log(DataStatistic statistic, long totalRows, long startTime) {
     long elapsed = (System.currentTimeMillis() - startTime) / 1000;
     long committedRows = statistic.getCommittedRows();
-    if (elapsed <= 0 || committedRows <=0) {
+    if (elapsed <= 0 || committedRows <= 0) {
       return;
     }
     long throughput = committedRows / elapsed;
@@ -246,6 +249,8 @@ public class DataGenerator {
     private final AsyncConnection asyncConn;
     private final Connection conn;
     private final TableName nameToFlush;
+    private AsyncTable asyncTable;
+    private BufferedMutator mutator;
 
     ConnectionWrap(Optional<ProcessMode> processMode,
             Optional<RequestMode> requestMode, TableName nameToFlush) throws IOException {
@@ -261,6 +266,10 @@ public class DataGenerator {
           case ASYNC:
             conn = nameToFlush != null ? ConnectionFactory.createConnection() : null;
             asyncConn = ConnectionFactory.createAsyncConnection().join();
+            break;
+          case BUFFER:
+            asyncConn = null;
+            conn = ConnectionFactory.createConnection();
             break;
           default:
             throw new IllegalArgumentException("Unknown type:" + processMode.get());
@@ -289,9 +298,24 @@ public class DataGenerator {
       }
     }
 
+    private AsyncTable getAsyncTable(TableName tableName) {
+      if (asyncTable == null) {
+        asyncTable = asyncConn.getTable(tableName, ForkJoinPool.commonPool());
+      }
+      return asyncTable;
+    }
+
+    private BufferedMutator getBufferedMutator(TableName tableName) throws IOException {
+      if (mutator == null) {
+        mutator = conn.getBufferedMutator(tableName);
+      }
+      return mutator;
+    }
+
     Slave createSlave(final TableName tableName, final DataStatistic statistic, final int batchSize) throws IOException {
       ProcessMode p = getProcessMode();
       RequestMode r = getRequestMode();
+
       switch (p) {
         case SYNC:
           switch (r) {
@@ -304,11 +328,13 @@ public class DataGenerator {
         case ASYNC:
           switch (r) {
             case BATCH:
-              return new BatchSlaveAsync(asyncConn.getTable(tableName, ForkJoinPool.commonPool()), statistic, batchSize);
+              return new BatchSlaveAsync(getAsyncTable(tableName), statistic, batchSize);
             case NORMAL:
-              return new NormalSlaveAsync(asyncConn.getTable(tableName, ForkJoinPool.commonPool()), statistic, batchSize);
+              return new NormalSlaveAsync(getAsyncTable(tableName), statistic, batchSize);
           }
           break;
+        case BUFFER:
+          return new BufferSlaveSync(getBufferedMutator(tableName), statistic, batchSize);
       }
       throw new RuntimeException("Failed to find the suitable slave. ProcessMode:" + p + ", RequestMode:" + r);
     }
@@ -316,6 +342,7 @@ public class DataGenerator {
     @Override
     public void close() throws IOException {
       flush();
+      safeClose(mutator);
       safeClose(conn);
       safeClose(asyncConn);
     }

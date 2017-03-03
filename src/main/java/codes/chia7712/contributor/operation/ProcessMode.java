@@ -5,7 +5,7 @@ import java.util.Optional;
 
 
 public enum ProcessMode {
-  ASYNC, SYNC;
+  ASYNC, SYNC, BUFFER;
   public static Optional<ProcessMode> find(String value) {
     return EnumUtil.find(value, ProcessMode.class);
   }

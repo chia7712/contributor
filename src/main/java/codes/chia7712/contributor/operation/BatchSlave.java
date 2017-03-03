@@ -134,18 +134,21 @@ public abstract class BatchSlave implements Slave {
     byte[] key = KEYS_BYTES.get((int) (Math.random() * KEYS_BYTES.size()));
     byte[] rowIndexBytes = Bytes.toBytes(String.valueOf(Math.abs(rowIndex)));
     byte[] timeBytes = Bytes.toBytes(String.valueOf(System.currentTimeMillis()));
-    byte[] buf = new byte[key.length + rowIndexBytes.length + DELIMITER.length + timeBytes.length];
+    byte[] randomIndex = Bytes.toBytes(String.valueOf(Math.abs(RANDOM.getLong())));
+    byte[] buf = new byte[key.length + timeBytes.length + DELIMITER.length
+        + randomIndex.length + DELIMITER.length + rowIndexBytes.length];
     int offset = 0;
     offset = Bytes.putBytes(buf, offset, key, 0, key.length);
-    offset = Bytes.putBytes(buf, offset, rowIndexBytes, 0, rowIndexBytes.length);
-    offset = Bytes.putBytes(buf, offset, DELIMITER, 0, DELIMITER.length);
     offset = Bytes.putBytes(buf, offset, timeBytes, 0, timeBytes.length);
+    offset = Bytes.putBytes(buf, offset, DELIMITER, 0, DELIMITER.length);
+    offset = Bytes.putBytes(buf, offset, randomIndex, 0, randomIndex.length);
+    offset = Bytes.putBytes(buf, offset, DELIMITER, 0, DELIMITER.length);
+    offset = Bytes.putBytes(buf, offset, rowIndexBytes, 0, rowIndexBytes.length);
     return buf;
   }
 
   private static Put createRandomPut(RowWork work) {
-    long randomIndex = RANDOM.getLong();
-    byte[] row = createRow(randomIndex);
+    byte[] row = createRow(work.getRowIndex());
     SimplePut put = new SimplePut(row);
     put.setDurability(work.getDurability());
     CellRewriter rewriter = null;
@@ -153,7 +156,7 @@ public abstract class BatchSlave implements Slave {
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
         Cell cell;
-        byte[] normalData = Bytes.toBytes(randomIndex + i);
+        byte[] normalData = Bytes.toBytes(work.getRowIndex() + i);
         if (rewriter == null) {
           cell = new IndividualBytesFieldCell(row, family,
                   normalData, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Put, normalData);
@@ -178,8 +181,7 @@ public abstract class BatchSlave implements Slave {
   }
 
   private static Get createRandomGet(RowWork work) {
-    long randomIndex = RANDOM.getLong();
-    byte[] row = createRow(randomIndex);
+    byte[] row = createRow(work.getRowIndex());
     Get get = new Get(row);
     switch (RANDOM.getInteger(1)) {
       case 0:
@@ -199,15 +201,14 @@ public abstract class BatchSlave implements Slave {
   }
 
   private static Delete createRandomDelete(RowWork work) {
-    long randomIndex = RANDOM.getLong();
-    byte[] row = createRow(randomIndex);
+    byte[] row = createRow(work.getRowIndex());
     SimpleDelete delete = new SimpleDelete(row);
     delete.setDurability(work.getDurability());
     CellRewriter rewriter = null;
     for (byte[] family : work.getFamilies()) {
       for (int i = 0; i != work.getQualifierCount(); ++i) {
         Cell cell;
-        byte[] normalData = Bytes.toBytes(randomIndex + i);
+        byte[] normalData = Bytes.toBytes(work.getRowIndex() + i);
         if (rewriter == null) {
           cell = new IndividualBytesFieldCell(row, family,
                 normalData, HConstants.LATEST_TIMESTAMP, KeyValue.Type.Delete, null);

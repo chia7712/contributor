@@ -51,6 +51,8 @@ public class NormalSlaveSync extends BatchSlave {
       case INCREMENT:
         incrs.add((Increment) row);
         break;
+      default:
+        throw new IllegalArgumentException("Unsupported type:" + work.getDataType());
     }
     if (needFlush()) {
       flush();
