@@ -33,7 +33,6 @@ import org.apache.hadoop.hbase.client.BufferedMutator;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Durability;
-import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.Threads;
 
@@ -250,7 +249,6 @@ public class DataGenerator {
     private final Connection conn;
     private final TableName nameToFlush;
     private AsyncTable asyncTable;
-    private BufferedMutator mutator;
 
     ConnectionWrap(Optional<ProcessMode> processMode,
             Optional<RequestMode> requestMode, TableName nameToFlush) throws IOException {
@@ -305,13 +303,6 @@ public class DataGenerator {
       return asyncTable;
     }
 
-    private BufferedMutator getBufferedMutator(TableName tableName) throws IOException {
-      if (mutator == null) {
-        mutator = conn.getBufferedMutator(tableName);
-      }
-      return mutator;
-    }
-
     Slave createSlave(final TableName tableName, final DataStatistic statistic, final int batchSize) throws IOException {
       ProcessMode p = getProcessMode();
       RequestMode r = getRequestMode();
@@ -334,7 +325,7 @@ public class DataGenerator {
           }
           break;
         case BUFFER:
-          return new BufferSlaveSync(getBufferedMutator(tableName), statistic, batchSize);
+          return new BufferSlaveSync(conn.getBufferedMutator(tableName), statistic, batchSize);
       }
       throw new RuntimeException("Failed to find the suitable slave. ProcessMode:" + p + ", RequestMode:" + r);
     }
@@ -342,7 +333,6 @@ public class DataGenerator {
     @Override
     public void close() throws IOException {
       flush();
-      safeClose(mutator);
       safeClose(conn);
       safeClose(asyncConn);
     }

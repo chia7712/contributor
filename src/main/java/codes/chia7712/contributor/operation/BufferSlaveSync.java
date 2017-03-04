@@ -39,6 +39,6 @@ public class BufferSlaveSync extends BatchSlave {
 
   @Override
   public void close() throws IOException, InterruptedException {
-    mutater.flush();
+    mutater.close();
   }
 }
