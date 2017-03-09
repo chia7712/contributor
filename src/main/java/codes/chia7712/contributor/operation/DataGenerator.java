@@ -134,15 +134,16 @@ public class DataGenerator {
       AtomicBoolean stop = new AtomicBoolean(false);
       CompletableFuture logger = CompletableFuture.runAsync(() -> {
         final long startTime = System.currentTimeMillis();
+        long maxThroughput = 0;
         try {
           while (!stop.get()) {
-            log(statistic, totalRows, startTime);
+            maxThroughput = log(statistic, totalRows, startTime, maxThroughput);
             TimeUnit.SECONDS.sleep(logInterval);
           }
         } catch (InterruptedException ex) {
           LOG.error(ex);
         } finally {
-          log(statistic, totalRows, startTime);
+          log(statistic, totalRows, startTime, maxThroughput);
         }
       });
       slaves.forEach(CompletableFuture::join);
@@ -190,24 +191,28 @@ public class DataGenerator {
     }
   }
 
-  private static void log(DataStatistic statistic, long totalRows, long startTime) {
+  private static long log(DataStatistic statistic, long totalRows,
+        long startTime, long maxThroughput) {
     long elapsed = (System.currentTimeMillis() - startTime) / 1000;
     long committedRows = statistic.getCommittedRows();
     if (elapsed <= 0 || committedRows <= 0) {
-      return;
+      return maxThroughput;
     }
     long throughput = committedRows / elapsed;
     if (throughput <= 0) {
-      return;
+      return maxThroughput;
     }
+    maxThroughput = Math.max(maxThroughput, throughput);
     LOG.info("------------------------");
     LOG.info("total rows:" + totalRows);
+    LOG.info("max throughput(rows/s):" + maxThroughput);
     LOG.info("throughput(rows/s):" + throughput);
     LOG.info("remaining(s):" + (totalRows - committedRows) / throughput);
     LOG.info("elapsed(s):" + elapsed);
     LOG.info("committed(rows):" + committedRows);
     LOG.info("processing(rows):" + statistic.getProcessingRows());
     statistic.consume((r, i) -> LOG.info(r.toString() + ":" + i));
+    return maxThroughput;
   }
 
   private static DataType getDataType(Optional<DataType> type) {
