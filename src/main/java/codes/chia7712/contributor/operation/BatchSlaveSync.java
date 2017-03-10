@@ -38,7 +38,6 @@ public class BatchSlaveSync extends BatchSlave {
     } finally {
       finishRows(rows);
       rows.clear();
-      table.close();
     }
   }
 

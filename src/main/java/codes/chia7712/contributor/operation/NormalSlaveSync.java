@@ -12,20 +12,46 @@ import org.apache.hadoop.hbase.client.Table;
 
 public class NormalSlaveSync extends BatchSlave {
 
-  private final List<Put> puts;
-  private final List<Delete> deletes;
-  private final List<Get> gets;
-  private final List<Increment> incrs;
+  private List<Put> puts;
+  private List<Delete> deletes;
+  private List<Get> gets;
+  private List<Increment> incrs;
   private final Table table;
   private Object[] objs = null;
+  private final int batchSize;
 
   public NormalSlaveSync(Table table, final DataStatistic statistic, final int batchSize) {
     super(statistic, batchSize);
-    this.puts = new ArrayList<>(batchSize);
-    this.deletes = new ArrayList<>(batchSize);
-    this.gets = new ArrayList<>(batchSize);
-    this.incrs = new ArrayList<>(batchSize);
     this.table = table;
+    this.batchSize = batchSize;
+  }
+
+  private List<Put> getPutBuffer() {
+    if (puts == null) {
+      puts = new ArrayList<>(batchSize);
+    }
+    return puts;
+  }
+
+  private List<Get> getGetBuffer() {
+    if (gets == null) {
+      gets = new ArrayList<>(batchSize);
+    }
+    return gets;
+  }
+
+  private List<Delete> getDeleteBuffer() {
+    if (deletes == null) {
+      deletes = new ArrayList<>(batchSize);
+    }
+    return deletes;
+  }
+
+  private List<Increment> getIncrementBuffer() {
+    if (incrs == null) {
+      incrs = new ArrayList<>(batchSize);
+    }
+    return incrs;
   }
 
   private Object[] getObjects() {
@@ -40,16 +66,16 @@ public class NormalSlaveSync extends BatchSlave {
     Row row = prepareRow(work);
     switch (work.getDataType()) {
       case GET:
-        gets.add((Get) row);
+        getGetBuffer().add((Get) row);
         break;
       case PUT:
-        puts.add((Put) row);
+        getPutBuffer().add((Put) row);
         break;
       case DELETE:
-        deletes.add((Delete) row);
+        getDeleteBuffer().add((Delete) row);
         break;
       case INCREMENT:
-        incrs.add((Increment) row);
+        getIncrementBuffer().add((Increment) row);
         break;
       default:
         throw new IllegalArgumentException("Unsupported type:" + work.getDataType());
@@ -60,17 +86,18 @@ public class NormalSlaveSync extends BatchSlave {
   }
 
   private void innerFlush(List<?> data, TableAction f, DataType type) throws IOException, InterruptedException {
-    if (data.isEmpty()) {
+    if (data == null || data.isEmpty()) {
       return;
     }
+    int size = data.size();
     try {
-      int size = data.size();
       f.run(table);
-      finishRows(type, size);
     } finally {
+      finishRows(type, size);
       data.clear();
     }
   }
+
   private void flush() throws IOException, InterruptedException {
     innerFlush(puts, t -> t.put(puts), DataType.PUT);
     innerFlush(deletes, t -> t.delete(deletes), DataType.DELETE);
@@ -96,6 +123,7 @@ public class NormalSlaveSync extends BatchSlave {
 
   @FunctionalInterface
   interface TableAction {
+
     void run(Table table) throws IOException, InterruptedException;
   }
 }

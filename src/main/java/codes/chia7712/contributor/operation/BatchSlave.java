@@ -24,12 +24,6 @@ import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.util.Bytes;
 
 public abstract class BatchSlave implements Slave {
-
-//  private static final int MAX_VALUE_SIZE = 1024;
-//  private static final int MIN_VALUE_SIZE = 100;
-//  private static final byte[] RANDOM_STRING_BYTES = Bytes.toBytes(
-//          RandomDataFactory.create().getString(
-//          Math.max((int) (Math.random() * MAX_VALUE_SIZE), MIN_VALUE_SIZE)));
   private static final RandomData RANDOM = RandomDataFactory.create();
   private static final List<String> KEYS = Arrays.asList(
           "0-",
