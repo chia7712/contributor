@@ -38,7 +38,7 @@ public class Progress implements Closeable {
       } catch (InterruptedException ex) {
         LOG.error("Breaking the sleep", ex);
       } finally {
-        output.accept(currentRow + "/" + totalRow
+        output.accept(submittedRows.get() + "/" + totalRow
                 + ", elapsed:" + (System.currentTimeMillis() - startTime));
       }
     });
