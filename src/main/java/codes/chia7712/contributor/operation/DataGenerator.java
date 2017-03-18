@@ -48,7 +48,7 @@ public class DataGenerator {
   private static final String FLUSH_AT_THE_END = "flushtable";
   private static final String LARGE_QUALIFIER = "largequal";
   private static final String LOG_INTERVAL = "logInterval";
-
+  private static final String RANDOM_ROW = "randomRow";
   public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
     Arguments arguments = new Arguments(
             Arrays.asList(
@@ -64,7 +64,8 @@ public class DataGenerator {
                     CELL_SIZE,
                     FLUSH_AT_THE_END,
                     LARGE_QUALIFIER,
-                    LOG_INTERVAL),
+                    LOG_INTERVAL,
+                    RANDOM_ROW),
             Arrays.asList(
                     getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
                     getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
@@ -86,6 +87,7 @@ public class DataGenerator {
     final boolean needFlush = arguments.getBoolean(FLUSH_AT_THE_END, true);
     final boolean largeQual = arguments.getBoolean(LARGE_QUALIFIER, false);
     final int logInterval = arguments.getInt(LOG_INTERVAL, 5);
+    final boolean randomRow = arguments.getBoolean(RANDOM_ROW, false);
     ExecutorService service = Executors.newFixedThreadPool(threads,
             Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
@@ -106,7 +108,8 @@ public class DataGenerator {
                   .setFamilies(families)
                   .setCellSize(cellSize)
                   .setQualifierCount(qualCount)
-                  .setLargeQualifier(largeQual);
+                  .setLargeQualifier(largeQual)
+                  .setRandomRow(randomRow);
           try {
             while ((packet = dispatcher.getPacket()).isPresent()) {
               while (packet.get().hasNext()) {
