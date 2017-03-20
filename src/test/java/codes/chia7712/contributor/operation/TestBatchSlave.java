@@ -9,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 public class TestBatchSlave {
   
@@ -33,9 +34,11 @@ public class TestBatchSlave {
 
   @Test
   public void testCreateRow() {
+    RowWork work = Mockito.mock(RowWork.class);
     Set<byte[]> rows = new TreeSet<>(Bytes.BYTES_COMPARATOR);
     for (int i = 0; i != 10000; ++i) {
-      byte[] row = BatchSlave.createRow(i);
+      Mockito.when(work.getRowIndex()).thenReturn((long) i);
+      byte[] row = BatchSlave.createRow(work);
       assertTrue(rows.add(row));
     }
   }

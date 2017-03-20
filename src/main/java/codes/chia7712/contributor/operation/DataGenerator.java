@@ -8,8 +8,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -17,6 +19,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HColumnDescriptor;
@@ -32,21 +35,33 @@ import org.apache.hadoop.hbase.util.Threads;
 public class DataGenerator {
 
   private static final Log LOG = LogFactory.getLog(DataGenerator.class);
-
+  private static final String NUMBER_OF_THREAD = "threads";
+  private static final String TABLE_NAME = "table";
+  private static final String NUMBER_OF_ROW = "rows";
+  private static final String BATCH_SIZE = "batchSize";
+  private static final String NUMBER_OF_QUALIFIER = "qualCount";
+  private static final String CELL_SIZE = "cellSize";
+  private static final String FLUSH_AT_THE_END = "flushtable";
+  private static final String LARGE_QUALIFIER = "largequal";
+  private static final String LOG_INTERVAL = "logInterval";
+  private static final String RANDOM_ROW = "randomRow";
   public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
     Arguments arguments = new Arguments(
             Arrays.asList(
-                    "threads",
-                    "table",
-                    "rows"),
+                    NUMBER_OF_THREAD,
+                    TABLE_NAME,
+                    NUMBER_OF_ROW),
             Arrays.asList(ProcessMode.class.getSimpleName(),
                     RequestMode.class.getSimpleName(),
                     DataType.class.getSimpleName(),
                     Durability.class.getSimpleName(),
-                    "batchSize",
-                    "qualCount",
-                    "cellSize",
-                    "flushtable"),
+                    BATCH_SIZE,
+                    NUMBER_OF_QUALIFIER,
+                    CELL_SIZE,
+                    FLUSH_AT_THE_END,
+                    LARGE_QUALIFIER,
+                    LOG_INTERVAL,
+                    RANDOM_ROW),
             Arrays.asList(
                     getDescription(ProcessMode.class.getSimpleName(), ProcessMode.values()),
                     getDescription(RequestMode.class.getSimpleName(), RequestMode.values()),
@@ -54,18 +69,21 @@ public class DataGenerator {
                     getDescription(Durability.class.getSimpleName(), Durability.values()))
     );
     arguments.validate(args);
-    final int threads = arguments.getInt("threads");
-    final TableName tableName = TableName.valueOf(arguments.get("table"));
-    final int totalRows = arguments.getInt("rows");
+    final int threads = arguments.getInt(NUMBER_OF_THREAD);
+    final TableName tableName = TableName.valueOf(arguments.get(TABLE_NAME));
+    final long totalRows = arguments.getLong(NUMBER_OF_ROW);
     final Optional<ProcessMode> processMode = ProcessMode.find(arguments.get(ProcessMode.class.getSimpleName()));
     final Optional<RequestMode> requestMode = RequestMode.find(arguments.get(RequestMode.class.getSimpleName()));
     final Optional<DataType> dataType = DataType.find(arguments.get(DataType.class.getSimpleName()));
     final Durability durability = arguments.get(Durability.class, Durability.USE_DEFAULT);
-    final int batchSize = arguments.getInt("batchSize", 100);
-    final int qualCount = arguments.getInt("qualCount", 1);
+    final int batchSize = arguments.getInt(BATCH_SIZE, 100);
+    final int qualCount = arguments.getInt(NUMBER_OF_QUALIFIER, 1);
     final Set<byte[]> families = findColumn(tableName);
-    final int cellSize = arguments.getInt("cellSize", -1);
-    final boolean needFlush = arguments.getBoolean("flushtable", true);
+    final int cellSize = arguments.getInt(CELL_SIZE, -1);
+    final boolean needFlush = arguments.getBoolean(FLUSH_AT_THE_END, true);
+    final boolean largeQual = arguments.getBoolean(LARGE_QUALIFIER, false);
+    final int logInterval = arguments.getInt(LOG_INTERVAL, 5);
+    final boolean randomRow = arguments.getBoolean(RANDOM_ROW, false);
     ExecutorService service = Executors.newFixedThreadPool(threads,
             Threads.newDaemonThreadFactory("-" + DataGenerator.class.getSimpleName()));
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, batchSize);
@@ -73,16 +91,21 @@ public class DataGenerator {
     try (ConnectionWrap conn = new ConnectionWrap(processMode, requestMode,
             needFlush ? tableName : null)) {
       List<CompletableFuture> slaves = new ArrayList<>(threads);
+      Map<SlaveCatalog, AtomicInteger> slaveCatalog = new TreeMap<>();
       for (int i = 0; i != threads; ++i) {
         Slave slave = conn.createSlave(tableName, statistic, batchSize);
-        LOG.info("#" + i + " " + slave);
+        LOG.info("Starting #" + i + " " + slave);
+        slaveCatalog.computeIfAbsent(new SlaveCatalog(slave), k -> new AtomicInteger(0))
+                .incrementAndGet();
         CompletableFuture fut = CompletableFuture.runAsync(() -> {
           Optional<Dispatcher.Packet> packet;
           RowWork.Builder builder = RowWork.newBuilder()
                   .setDurability(durability)
                   .setFamilies(families)
                   .setCellSize(cellSize)
-                  .setQualifierCount(qualCount);
+                  .setQualifierCount(qualCount)
+                  .setLargeQualifier(largeQual)
+                  .setRandomRow(randomRow);
           try {
             while ((packet = dispatcher.getPacket()).isPresent()) {
               while (packet.get().hasNext()) {
@@ -110,41 +133,87 @@ public class DataGenerator {
       AtomicBoolean stop = new AtomicBoolean(false);
       CompletableFuture logger = CompletableFuture.runAsync(() -> {
         final long startTime = System.currentTimeMillis();
+        long maxThroughput = 0;
         try {
           while (!stop.get()) {
-            log(statistic, totalRows, startTime);
-            TimeUnit.SECONDS.sleep(2);
+            maxThroughput = log(statistic, totalRows, startTime, maxThroughput);
+            TimeUnit.SECONDS.sleep(logInterval);
           }
         } catch (InterruptedException ex) {
           LOG.error(ex);
         } finally {
-          log(statistic, totalRows, startTime);
+          log(statistic, totalRows, startTime, maxThroughput);
         }
       });
       slaves.forEach(CompletableFuture::join);
       stop.set(true);
       logger.join();
       LOG.info("threads:" + threads
-        + ", tableName:" + tableName
-        + ", totalRows:" + totalRows
-        + ", " + ProcessMode.class.getSimpleName() + ":" + processMode
-        + ", " + RequestMode.class.getSimpleName() + ":" + requestMode
-        + ", " + DataType.class.getSimpleName() + ":" + dataType
-        + ", " + Durability.class.getSimpleName() + ":" + durability
-        + ", batchSize:" + batchSize
-        + ", qualCount:" + qualCount);
+              + ", tableName:" + tableName
+              + ", totalRows:" + totalRows
+              + ", " + ProcessMode.class.getSimpleName() + ":" + processMode
+              + ", " + RequestMode.class.getSimpleName() + ":" + requestMode
+              + ", " + DataType.class.getSimpleName() + ":" + dataType
+              + ", " + Durability.class.getSimpleName() + ":" + durability
+              + ", batchSize:" + batchSize
+              + ", qualCount:" + qualCount);
+      slaveCatalog.forEach((k, v) -> LOG.info(k + " " + v));
     }
   }
 
-  private static void log(DataStatistic statistic, int totalRows, long startTime) {
-    long elapsed = System.currentTimeMillis() - startTime;
+  private static class SlaveCatalog implements Comparable<SlaveCatalog> {
+
+    private final ProcessMode processMode;
+    private final RequestMode requestMode;
+
+    SlaveCatalog(Slave slave) {
+      this(slave.getProcessMode(), slave.getRequestMode());
+    }
+
+    SlaveCatalog(final ProcessMode processMode, RequestMode requestMode) {
+      this.processMode = processMode;
+      this.requestMode = requestMode;
+    }
+
+    @Override
+    public int compareTo(SlaveCatalog o) {
+      int rval = processMode.compareTo(o.processMode);
+      if (rval != 0) {
+        return rval;
+      }
+      return requestMode.compareTo(o.requestMode);
+    }
+
+    @Override
+    public String toString() {
+      return processMode + "/" + requestMode;
+    }
+  }
+
+  private static long log(DataStatistic statistic, long totalRows,
+        long startTime, long maxThroughput) {
+    long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+    long committedRows = statistic.getCommittedRows();
+    if (elapsed <= 0 || committedRows <= 0) {
+      return maxThroughput;
+    }
+    long throughput = committedRows / elapsed;
+    if (throughput <= 0) {
+      return maxThroughput;
+    }
+    maxThroughput = Math.max(maxThroughput, throughput);
     LOG.info("------------------------");
     LOG.info("total rows:" + totalRows);
-    LOG.info("elapsed(ms):" + elapsed);
-    LOG.info("commit:" + statistic.getCommittedRows());
-    LOG.info("processing:" + statistic.getProcessingRows());
+    LOG.info("max throughput(rows/s):" + maxThroughput);
+    LOG.info("throughput(rows/s):" + throughput);
+    LOG.info("remaining(s):" + (totalRows - committedRows) / throughput);
+    LOG.info("elapsed(s):" + elapsed);
+    LOG.info("committed(rows):" + committedRows);
+    LOG.info("processing(rows):" + statistic.getProcessingRows());
     statistic.consume((r, i) -> LOG.info(r.toString() + ":" + i));
+    return maxThroughput;
   }
+
   private static DataType getDataType(Optional<DataType> type) {
     if (type.isPresent()) {
       return type.get();
@@ -182,6 +251,7 @@ public class DataGenerator {
     private final RequestMode requestMode;
     private final Connection conn;
     private final TableName nameToFlush;
+
     ConnectionWrap(Optional<ProcessMode> processMode,
             Optional<RequestMode> requestMode, TableName nameToFlush) throws IOException {
       this.processMode = processMode.orElse(null);
@@ -192,8 +262,11 @@ public class DataGenerator {
           case SYNC:
             conn = ConnectionFactory.createConnection();
             break;
+          case BUFFER:
+            conn = ConnectionFactory.createConnection();
+            break;
           default:
-            conn = null;
+            throw new IllegalArgumentException("Unknown type:" + processMode.get());
         }
       } else {
         conn = ConnectionFactory.createConnection();
@@ -221,6 +294,7 @@ public class DataGenerator {
     Slave createSlave(final TableName tableName, final DataStatistic statistic, final int batchSize) throws IOException {
       ProcessMode p = getProcessMode();
       RequestMode r = getRequestMode();
+
       switch (p) {
         case SYNC:
           switch (r) {
@@ -230,6 +304,8 @@ public class DataGenerator {
               return new NormalSlaveSync(conn.getTable(tableName), statistic, batchSize);
           }
           break;
+        case BUFFER:
+          return new BufferSlaveSync(conn.getBufferedMutator(tableName), statistic, batchSize);
       }
       throw new RuntimeException("Failed to find the suitable slave. ProcessMode:" + p + ", RequestMode:" + r);
     }
@@ -250,6 +326,7 @@ public class DataGenerator {
         LOG.error(ex);
       }
     }
+
     private static void safeClose(Closeable obj) {
       if (obj != null) {
         try {
