@@ -20,15 +20,16 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
 import java.sql.Date;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import javafx.util.Pair;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -144,35 +145,38 @@ public final class DataGenerator {
     final int threadCount = arguments.getInt("threads");
     final long totalRows = arguments.getInt("rows");
     final int batchSize = arguments.getInt("batch_size", 100);
-    final Pair<String, List<DataWriter>> queryAndWriters = createWriter(url, dbType, tableName);
+    final Map<String, List<DataWriter>> queryAndWriters = createWriter(url, dbType, tableName);
     ExecutorService service = Executors.newFixedThreadPool(threadCount, Threads.newDaemonThreadFactory("-" + WriteThread.class.getSimpleName()));
-    List<WriteThread> writeThreads = new LinkedList<>();
+    List<WriteThread> writeThreads = new ArrayList<>();
     Dispatcher dispatcher = DispatcherFactory.get(totalRows, () -> batchSize);
-    try (Progress progress = new Progress(dispatcher::getCommittedRows, totalRows)) {
-      for (int i = 0; i < threadCount; ++i) {
-        WriteThread writeThread = new WriteThread(url, queryAndWriters.getKey(),
-                dispatcher, queryAndWriters.getValue());
-        writeThreads.add(writeThread);
-        service.execute(writeThread);
+    for(Map.Entry<String, List<DataWriter>> entry : queryAndWriters.entrySet()) {
+      final String query = entry.getKey();
+      final List<DataWriter> writers = entry.getValue();
+      try (Progress progress = new Progress(dispatcher::getCommittedRows, totalRows)) {
+        for (int i = 0; i < threadCount; ++i) {
+          WriteThread writeThread = new WriteThread(url, query, dispatcher, writers);
+          writeThreads.add(writeThread);
+          service.execute(writeThread);
+        }
+        service.shutdown();
+        service.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+        writeThreads.forEach(t -> t.close());
       }
-      service.shutdown();
-      service.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
-      writeThreads.forEach(t -> t.close());
     }
   }
 
-  private static Pair<String, List<DataWriter>> createWriter(final String jdbcUrl,
+  private static Map<String, List<DataWriter>> createWriter(final String jdbcUrl,
           final DBType dbType, final TableName fullname) throws SQLException {
     try (Connection con = DriverManager.getConnection(jdbcUrl)) {
       return createWriter(con, dbType, fullname);
     }
   }
 
-  private static Pair<String, List<DataWriter>> createWriter(final Connection con,
+  private static Map<String, List<DataWriter>> createWriter(final Connection con,
           final DBType dbType, final TableName fullname) throws SQLException {
     DatabaseMetaData meta = con.getMetaData();
     try (ResultSet rset = meta.getColumns(null, fullname.getSchema(null), fullname.getName(), null)) {
-      List<DataWriter> writers = new LinkedList<>();
+      List<DataWriter> writers = new ArrayList<>();
       RandomData rn = RandomDataFactory.create();
       StringBuilder queryBuilder = new StringBuilder();
       switch (dbType) {
@@ -254,7 +258,9 @@ public final class DataGenerator {
       }
       queryBuilder.deleteCharAt(queryBuilder.length() - 1)
               .append(")");
-      return new Pair<>(queryBuilder.toString(), writers);
+      Map<String, List<DataWriter>> rval = new TreeMap<>();
+      rval.put(queryBuilder.toString(), writers);
+      return rval;
     }
   }
 
