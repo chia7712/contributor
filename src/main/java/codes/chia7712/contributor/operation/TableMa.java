@@ -17,7 +17,9 @@ import org.apache.hadoop.hbase.util.Bytes;
 public class TableMa {
   public static void main(String[] args) throws IOException {
     if (args.length < 1) {
-      System.err.println("[Usage] cmd <args>");
+      System.out.println("remove <table name>");
+      System.out.println("group <table name>");
+      return;
     }
     List<String> otherArgs = new ArrayList<>(args.length - 1);
     for (int i = 1; i != args.length; ++i) {
@@ -29,10 +31,6 @@ public class TableMa {
         break;
       case "group":
         group(otherArgs);
-        break;
-      case "help":
-        System.out.println("remove <table name>");
-        System.out.println("group <table name>");
         break;
       default:
         System.out.println("What are you talking??");
