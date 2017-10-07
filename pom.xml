@@ -11,16 +11,9 @@
     <main.basedir>${basedir}</main.basedir>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
-    <hadoop.version>2.7.1</hadoop.version>
     <hbase.version>3.0.0-SNAPSHOT</hbase.version>
     <mock.version>1.10.19</mock.version>
   </properties>
-  <repositories>
-    <repository>
-      <id>jitpack.io</id>
-      <url>https://jitpack.io</url>
-    </repository>
-  </repositories>
   <dependencies>
     <dependency>
       <groupId>org.apache.hbase</groupId>
