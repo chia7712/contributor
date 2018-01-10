@@ -204,5 +204,10 @@ public class CellRewriter {
     public int getTagsLength() {
       return (int) getFieldLength(Field.TAG);
     }
+
+    @Override
+    public Type getType() {
+      return cell.getType();
+    }
   }
 }
